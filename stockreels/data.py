@@ -72,7 +72,10 @@ def fetch_stock(ticker):
 
     t = yf.Ticker(ticker)
     info = t.info
-    hist = t.history(period="6mo", interval="1d")["Close"].dropna()
+    daily = t.history(period="6mo", interval="1d").dropna(subset=["Close"])
+    hist = daily["Close"]
+    weekly = daily.resample("W-FRI").agg({"Open": "first", "High": "max", "Low": "min",
+                                          "Close": "last", "Volume": "sum"}).dropna()
 
     earnings = []
     try:
@@ -126,4 +129,29 @@ def fetch_stock(ticker):
         "earnings": earnings,
         "last_earnings": surprise,
         "history": [round(float(x), 2) for x in hist.tolist()],
+        # weekly candles for the chart: [open, high, low, close, volume]
+        "candles": [[round(float(r.Open), 2), round(float(r.High), 2), round(float(r.Low), 2),
+                     round(float(r.Close), 2), float(r.Volume)] for r in weekly.itertuples()],
+        "market": fetch_market(),
     }
+
+
+INDICES = [("S&P 500", "^GSPC"), ("NASDAQ", "^IXIC"), ("DOW", "^DJI"), ("VIX", "^VIX")]
+
+
+def fetch_market():
+    """Last daily % change of the main indices, for the ticker tape on every slide."""
+    import yfinance as yf
+
+    try:
+        closes = yf.download([s for _, s in INDICES], period="5d", interval="1d",
+                             progress=False, auto_adjust=True)["Close"]
+        out = []
+        for name, sym in INDICES:
+            c = closes[sym].dropna()
+            if len(c) >= 2:
+                out.append([name, round(float(c.iloc[-1]), 2), round(float((c.iloc[-1] / c.iloc[-2] - 1) * 100), 2)])
+        return out
+    except Exception as e:
+        print(f"[data] market tape unavailable: {e}")
+        return []

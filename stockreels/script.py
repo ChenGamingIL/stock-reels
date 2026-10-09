@@ -136,13 +136,13 @@ def build_script(d):
         {"kind": "hook", "title": s["hook"], "narration": n["hook"]},
         {"kind": "chart", "title": "6 חודשים אחרונים", "narration": n["chart"]},
         {"kind": "table", "title": "יחסים פיננסיים", "rows": ratio_rows(d), "narration": n["ratios"]},
-        {"kind": "table", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
+        {"kind": "earnings", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
          "rows": earnings_rows(d), "narration": n["earnings"]},
         {"kind": "bullets", "title": "למה היא מעניינת", "bullets": s["why"], "narration": n["why"]},
         {"kind": "bullets", "title": "סיכונים", "bullets": s["risks"], "narration": n["risks"], "accent": "red"},
         {"kind": "outro", "title": "עקבו למניה חמה כל יום", "narration": n["outro"]},
     ]
-    slides = [sl for sl in slides if sl["kind"] != "table" or sl["rows"]]
+    slides = [sl for sl in slides if sl["kind"] not in ("table", "earnings") or sl["rows"]]
     caption = s["caption"].strip()
     if "ייעוץ" not in caption:
         caption += "\n" + DISCLAIMER

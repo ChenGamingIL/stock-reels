@@ -101,6 +101,12 @@ def base(d, title):
         t = y / H
         px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
     dr = ImageDraw.Draw(img)
+    # faint trading-terminal grid
+    for gx in range(0, W, 90):
+        dr.line([(gx, 90), (gx, H - 260)], fill=(30, 25, 16), width=1)
+    for gy in range(90, H - 260, 90):
+        dr.line([(0, gy), (W, gy)], fill=(30, 25, 16), width=1)
+    ticker_tape(dr, d)
     # header: logo + ticker badge + price, gold rule underneath
     paste_logo(img, (60, 105), 130)
     dr.rounded_rectangle([215, 125, 475, 215], 22, fill=ACCENT)
@@ -121,6 +127,34 @@ def base(d, title):
     return img, dr
 
 
+def arrow(dr, x, y, up, color, s=12):
+    """Small filled triangle, up or down, with its left edge at x and centred on y."""
+    pts = [(x, y + s * 0.6), (x + s * 2, y + s * 0.6), (x + s, y - s * 0.8)] if up else \
+          [(x, y - s * 0.6), (x + s * 2, y - s * 0.6), (x + s, y + s * 0.8)]
+    dr.polygon(pts, fill=color)
+
+
+def ticker_tape(dr, d):
+    """Market strip across the top: the main indices' daily change."""
+    items = d.get("market") or []
+    dr.rectangle([0, 0, W, 72], fill=(14, 12, 8))
+    dr.line([(0, 72), (W, 72)], fill=GOLD_DARK, width=2)
+    if not items:
+        return
+    f, x = font(28), 30
+    for name, _, pct in items:
+        color = GREEN if pct >= 0 else RED
+        dr.text((x, 36), name, font=f, fill=MUTED, anchor="lm")
+        x += f.getlength(name) + 12
+        arrow(dr, x, 36, pct >= 0, color, 9)
+        x += 26
+        txt = f"{abs(pct):.2f}%"
+        dr.text((x, 36), txt, font=f, fill=color, anchor="lm")
+        x += f.getlength(txt) + 34
+        if x > W - 60:
+            break
+
+
 def slide_hook(d, sl):
     img, dr = base(d, sl["title"])
     rtl_text(dr, (W - 70, 760), d["name"], 60, MUTED)
@@ -131,6 +165,43 @@ def slide_hook(d, sl):
 
 def slide_chart(d, sl):
     img, dr = base(d, sl["title"])
+    candles = d.get("candles") or []
+    if len(candles) < 2:
+        return slide_line_chart(d, sl, img, dr)
+    x0, x1, y0, y1 = 70, W - 190, 690, 1230     # price area, axis labels on the right
+    v0, v1 = 1260, 1390                          # volume bars
+    lo, hi = min(c[2] for c in candles), max(c[1] for c in candles)
+    pad = (hi - lo) * 0.06 or 1
+    lo, hi = lo - pad, hi + pad
+    py = lambda p: y1 - (y1 - y0) * (p - lo) / (hi - lo)
+    for i in range(5):  # price gridlines + labels
+        p = lo + (hi - lo) * i / 4
+        dr.line([(x0, py(p)), (x1, py(p))], fill=(48, 40, 24), width=2)
+        dr.text((x1 + 20, py(p)), f"{p:,.0f}", font=font(30), fill=MUTED, anchor="lm")
+    step = (x1 - x0) / len(candles)
+    body = max(step * 0.62, 4)
+    vmax = max(c[4] for c in candles) or 1
+    for i, (o, h, l, c, v) in enumerate(candles):
+        cx = x0 + step * (i + 0.5)
+        color = GREEN if c >= o else RED
+        dr.line([(cx, py(h)), (cx, py(l))], fill=color, width=3)
+        top, bot = sorted((py(o), py(c)))
+        dr.rectangle([cx - body / 2, top, cx + body / 2, max(bot, top + 3)], fill=color)
+        dim = tuple(int(a * 0.45 + b * 0.55) for a, b in zip(color, BG_BOTTOM))
+        dr.rectangle([cx - body / 2, v1 - (v1 - v0) * v / vmax, cx + body / 2, v1], fill=dim)
+    dr.text((x0, v0 - 8), "VOL", font=font(26), fill=MUTED, anchor="ls")
+    last = candles[-1][3]  # last price tag on the axis
+    dr.rounded_rectangle([x1 + 8, py(last) - 26, W - 20, py(last) + 26], 10, fill=ACCENT)
+    dr.text(((x1 + W - 12) / 2, py(last)), f"{last:,.2f}", font=font(30), fill=INK, anchor="mm")
+    ch = d.get("change_6m_pct")
+    if ch is not None:
+        color = GREEN if ch >= 0 else RED
+        dr.text((W // 2, 1440), f"{ch:+.1f}%", font=font(96), fill=color, anchor="ma")
+        rtl_text(dr, (W // 2, 1560), "6 חודשים · כל נר = שבוע", 34, MUTED, anchor="ma")
+    return img
+
+
+def slide_line_chart(d, sl, img, dr):
     pts = d.get("history") or []
     if len(pts) > 1:
         x0, x1, y0, y1 = 80, W - 80, 700, 1400
@@ -174,6 +245,56 @@ def slide_table(d, sl):
     return img
 
 
+def fmt_big(v):
+    for div, suf in ((1e12, "T"), (1e9, "B"), (1e6, "M")):
+        if abs(v) >= div:
+            return f"${v / div:.1f}{suf}"
+    return f"${v:,.0f}"
+
+
+def slide_earnings(d, sl):
+    """Quarterly report card: last EPS vs estimate, then revenue bars per quarter."""
+    img, dr = base(d, sl["title"])
+    y = 660
+    le = d.get("last_earnings") or {}
+    if le.get("eps_reported") is not None and le.get("eps_estimate") is not None:
+        beat = le["eps_reported"] >= le["eps_estimate"]
+        color = GREEN if beat else RED
+        dr.rounded_rectangle([60, y, W - 60, y + 250], 28, fill=(22, 18, 10), outline=GOLD_DARK, width=3)
+        rtl_text(dr, (W - 100, y + 30), "דוח אחרון", 40, MUTED)
+        if le.get("date"):
+            dr.text((100, y + 30), le["date"], font=font(36), fill=MUTED)
+        dr.text((W - 100, y + 110), f"EPS {le['eps_reported']:.2f}", font=font(64), fill=WHITE, anchor="ra")
+        rtl_text(dr, (W - 100, y + 190), f"צפי {le['eps_estimate']:.2f}", 38, MUTED)
+        dr.rounded_rectangle([100, y + 110, 430, y + 200], 20, fill=color)
+        label = "הכה את הצפי" if beat else "פספס את הצפי"
+        rtl_text(dr, (265, y + 155), label, 40, INK, anchor="mm")
+        if le.get("surprise_pct") is not None:
+            dr.text((265, y + 220), f"{le['surprise_pct']:+.1f}%", font=font(34), fill=color, anchor="mm")
+        y += 300
+    qs = [e for e in d.get("earnings") or [] if e.get("revenue")][-4:]
+    if qs:
+        rtl_text(dr, (W - 80, y), "הכנסות לפי רבעון", 40, MUTED)
+        top, base_y = y + 120, 1490 if y < 900 else 1530
+        rmax = max(e["revenue"] for e in qs)
+        slot = (W - 160) / len(qs)
+        bw = slot * 0.56
+        for i, e in enumerate(qs):
+            cx = 80 + slot * (i + 0.5)
+            bh = (base_y - top - 60) * e["revenue"] / rmax
+            prev = qs[i - 1]["revenue"] if i else None
+            color = ACCENT if prev is None else (GREEN if e["revenue"] >= prev else RED)
+            dr.rounded_rectangle([cx - bw / 2, base_y - bh, cx + bw / 2, base_y], 12, fill=color)
+            dr.text((cx, base_y - bh - 14), fmt_big(e["revenue"]), font=font(34), fill=WHITE, anchor="ms")
+            dr.text((cx, base_y + 16), e["quarter"], font=font(30), fill=MUTED, anchor="ma")
+            if e.get("eps") is not None:
+                dr.text((cx, base_y + 56), f"EPS {e['eps']:.2f}", font=font(28), fill=ACCENT, anchor="ma")
+        dr.line([(70, base_y), (W - 70, base_y)], fill=GOLD_DARK, width=3)
+    elif sl.get("rows"):
+        return slide_table(d, sl)
+    return img
+
+
 def slide_bullets(d, sl):
     img, dr = base(d, sl["title"])
     color = RED if sl.get("accent") == "red" else GREEN
@@ -197,7 +318,7 @@ def slide_outro(d, sl):
     return img
 
 
-RENDERERS = {"hook": slide_hook, "chart": slide_chart, "table": slide_table,
+RENDERERS = {"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro}
 
 
