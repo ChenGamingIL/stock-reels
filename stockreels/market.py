@@ -157,3 +157,54 @@ def fetch_premarket(exclude=()):
         "earnings": earnings_this_week(),
         "setup": swing_setup(exclude),
     }
+
+
+# --- live session: market-open snapshot (16:45 Israel) and end-of-day wrap (23:15 Israel) ---
+
+INDICES_LIVE = [("S&P 500", "^GSPC", 0), ("נאסד\"ק", "^IXIC", 0), ("דאו ג'ונס", "^DJI", 0),
+                ("ראסל 2000", "^RUT", 0), ("VIX פחד", "^VIX", 2), ("תשואה 10 שנים", "^TNX", 2)]
+SECTORS = [("טכנולוגיה", "XLK"), ("פיננסים", "XLF"), ("אנרגיה", "XLE"), ("בריאות", "XLV"),
+           ("צריכה מחזורית", "XLY"), ("תעשייה", "XLI"), ("תקשורת", "XLC"), ("צריכה בסיסית", "XLP"),
+           ("תשתיות", "XLU"), ("נדל\"ן", "XLRE"), ("חומרים", "XLB")]
+
+
+def _session_changes(symbols):
+    """{symbol: (last, pct vs previous close)} for today's US session, or {} if the market didn't trade today."""
+    import yfinance as yf
+    from zoneinfo import ZoneInfo
+
+    intraday = yf.download(symbols, period="5d", interval="5m", progress=False, auto_adjust=True)["Close"]
+    daily = yf.download(symbols, period="10d", interval="1d", progress=False, auto_adjust=True)["Close"]
+    ny_today = dt.datetime.now(ZoneInfo("America/New_York")).date()
+    idx = intraday.index.tz_convert("America/New_York")
+    out = {}
+    for s in symbols:
+        try:
+            col = intraday[s]
+            today = col[idx.date == ny_today].dropna()
+            if not len(today):
+                continue
+            d = daily[s].dropna()
+            prev = d[d.index.date < ny_today].iloc[-1]
+            out[s] = (float(today.iloc[-1]), (float(today.iloc[-1]) / float(prev) - 1) * 100)
+        except Exception:
+            pass
+    return out
+
+
+def fetch_session(kind):
+    """Data for the 'open' snapshot or the 'close' wrap. Returns None when the US market is closed today."""
+    syms = [s for _, s, _ in INDICES_LIVE] + list(WATCHLIST) + ([s for _, s in SECTORS] if kind == "close" else [])
+    ch = _session_changes(syms)
+    if "^GSPC" not in ch:
+        return None
+    tiles = [{"label": l, "symbol": s, "price": round(ch[s][0], d), "decimals": d, "pct": round(ch[s][1], 2)}
+             for l, s, d in INDICES_LIVE if s in ch]
+    moves = sorted(((t, round(ch[t][1], 2)) for t in WATCHLIST if t in ch), key=lambda kv: kv[1])
+    data = {"kind": kind, "date": dt.date.today().isoformat(), "tiles": tiles,
+            "movers": {"gainers": [m for m in moves[::-1][:3] if m[1] > 0],
+                       "losers": [m for m in moves[:3] if m[1] < 0]}}
+    if kind == "close":
+        data["sectors"] = sorted(([n, round(ch[s][1], 2)] for n, s in SECTORS if s in ch),
+                                 key=lambda x: -x[1])
+    return data

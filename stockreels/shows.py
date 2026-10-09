@@ -101,3 +101,22 @@ def lesson_script(day=None):
                + "בשיעור: " + ", ".join(p[0] for p in points) + ". הכל בדקה אחת.\n"
                + "שמרו את הפוסט ועקבו לשיעור חדש כל ערב.\n" + DISCLAIMER + "\n\n" + HASHTAGS + " #לימודשוקההון")
     return {"slides": slides, "caption": caption, "number": n}
+
+
+def session_script(m):
+    """Market-open snapshot or end-of-day wrap, posted as Story slides only."""
+    spx = next((t for t in m["tiles"] if t["symbol"] == "^GSPC"), None)
+    is_open = m["kind"] == "open"
+    slides = [{"kind": "intro", "title": "הפעמון צלצל בוול סטריט" if is_open else "סיכום יום המסחר",
+               "lines": [m["date"], f"S&P 500 {spx['pct']:+.2f}%" if spx else ""],
+               "narration": ""}]
+    slides.append({"kind": "tiles", "title": "איך נפתח השוק" if is_open else "איך נסגר השוק",
+                   "tiles": m["tiles"], "narration": ""})
+    if m.get("sectors"):
+        slides.append({"kind": "bars", "title": "סקטורים היום", "bars": m["sectors"], "narration": ""})
+    if m["movers"]["gainers"] or m["movers"]["losers"]:
+        slides.append({"kind": "movers", "title": "מי זזה בפתיחה" if is_open else "הבולטות של היום",
+                       "movers": m["movers"], "narration": ""})
+    slides.append({"kind": "outro", "title": "נתראה בסיכום הערב" if is_open else "מחר 08:00: המניה החמה הבאה",
+                   "narration": ""})
+    return {"slides": slides, "caption": ""}

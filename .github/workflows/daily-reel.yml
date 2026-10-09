@@ -4,11 +4,16 @@ on:
   schedule:
     # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
     # two crons and the "Israel time" step lets only the right one through:
-    # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 20:00 basics lesson.
+    # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
+    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri).
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
     - cron: "30 12 * * 1-5"
     - cron: "30 13 * * 1-5"
+    - cron: "45 13 * * 1-5"
+    - cron: "45 14 * * 1-5"
+    - cron: "15 20 * * 1-5"
+    - cron: "15 21 * * 1-5"
     - cron: "0 17 * * *"
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -16,7 +21,7 @@ on:
       show:
         description: "Which show"
         type: choice
-        options: [hot, premarket, lesson]
+        options: [hot, premarket, open, lesson, close]
         default: hot
       ticker:
         description: "Force a ticker (optional)"
@@ -58,7 +63,9 @@ jobs:
           case "$(TZ=Asia/Jerusalem date +%H)" in
             08) show=hot ;;
             15) show=premarket ;;
+            16) show=open ;;
             20) show=lesson ;;
+            23) show=close ;;
             *) show="" ;;
           esac
           echo "show=$show" >> "$GITHUB_OUTPUT"

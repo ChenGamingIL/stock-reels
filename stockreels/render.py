@@ -391,6 +391,38 @@ def slide_movers(d, sl):
     return img
 
 
+def slide_bars(d, sl):
+    """Horizontal bars around a zero line, e.g. sector performance."""
+    img, dr = base(d, sl["title"])
+    bars = sl["bars"][:11]
+    top, rowh, mid = 640, min(90, 1000 / max(len(bars), 1)), 330
+    span = max(abs(p) for _, p in bars) or 1
+    dr.line([(mid, top - 20), (mid, top + rowh * len(bars))], fill=GOLD_DARK, width=3)
+    for i, (name, p) in enumerate(bars):
+        y = top + i * rowh
+        color = GREEN if p >= 0 else RED
+        w = 230 * abs(p) / span
+        x0, x1 = (mid, mid + w) if p >= 0 else (mid - w, mid)
+        dr.rounded_rectangle([x0, y + 12, max(x1, x0 + 4), y + rowh - 12], 8, fill=color)
+        dr.text((mid + (w + 14 if p >= 0 else -w - 14), y + rowh / 2), f"{p:+.2f}%", font=font(30), fill=color,
+                anchor="lm" if p >= 0 else "rm")
+        rtl_text(dr, (W - 80, y + rowh / 2), name, 40, WHITE, anchor="rm")
+    return img
+
+
+def cover(d, title, sub=""):
+    """Reel cover: big hook inside the 3:4 area Instagram shows on the profile grid."""
+    img, dr = base({**d, "market": d.get("market")}, "")
+    lines = wrap(title, 104, W - 140)[:4]
+    y = 960 - len(lines) * 62
+    for line in lines:
+        rtl_text(dr, (W // 2, y), line, 104, WHITE, anchor="ma")
+        y += 124
+    if sub:
+        rtl_text(dr, (W // 2, y + 30), sub, 52, ACCENT, anchor="ma")
+    return img
+
+
 def slide_setup(d, sl):
     img, dr = base(d, sl["title"])
     s = sl["setup"]
@@ -484,7 +516,7 @@ def slide_lesson(d, sl):
 
 
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
-             "setup": slide_setup, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
+             "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro}
 
 

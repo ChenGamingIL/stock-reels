@@ -80,7 +80,7 @@ def host_on_github(video_path, tag):
     return _upload_asset(_create_release(tag), video_path, "reel.mp4", "video/mp4")
 
 
-def publish_reel(video_path, caption, tag="reel"):
+def publish_reel(video_path, caption, tag="reel", cover_path=None):
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"
     params = {"media_type": "REELS", "caption": caption, "share_to_feed": "true", "access_token": token}
@@ -94,8 +94,14 @@ def publish_reel(video_path, caption, tag="reel"):
             "Authorization": f"OAuth {token}", "offset": "0", "file_size": str(len(data)),
         }, data=data, timeout=300))
     else:
-        video_url = host_on_github(video_path, tag)
+        rid = _create_release(tag)
+        video_url = _upload_asset(rid, video_path, "reel.mp4", "video/mp4")
         print(f"[upload] video hosted at {video_url}")
+        if cover_path and os.path.exists(cover_path):  # branded grid cover
+            from PIL import Image
+            jpg = cover_path.rsplit(".", 1)[0] + ".jpg"
+            Image.open(cover_path).convert("RGB").save(jpg, quality=92)
+            params["cover_url"] = _upload_asset(rid, jpg, "cover.jpg", "image/jpeg")
         cid = _check(requests.post(f"{base}/{user_id}/media", data={**params, "video_url": video_url},
                                    timeout=60))["id"]
 
@@ -112,9 +118,31 @@ def publish_story(video_url=None, image_url=None):
     return _wait_and_publish(base, user_id, token, cid)
 
 
+def publishing_quota():
+    """(posts used in the last 24h, daily limit) from Instagram's content_publishing_limit."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    r = _check(requests.get(f"https://{HOST}/{VERSION}/{user_id}/content_publishing_limit", params={
+        "fields": "quota_usage,config", "access_token": token}, timeout=30))["data"][0]
+    return r.get("quota_usage", 0), (r.get("config") or {}).get("quota_total", 100)
+
+
 def publish_story_slides(png_paths, tag):
     """Post each slide as its own Story image, in order (Instagram needs JPEG)."""
     from PIL import Image
+
+    if not png_paths:
+        return []
+    try:  # leave room under the 24h limit for the scheduled Reels
+        used, total = publishing_quota()
+        print(f"[upload] publishing quota {used}/{total}")
+        room = total - used - 3
+        if room < len(png_paths):
+            print(f"[upload] near the daily limit, posting {max(room, 0)} of {len(png_paths)} slides")
+            png_paths = list(png_paths)[:max(room, 0)]
+        if not png_paths:
+            return []
+    except Exception as e:
+        print(f"[upload] quota check failed: {e}")
 
     release_id = _create_release(tag)
     ids = []
