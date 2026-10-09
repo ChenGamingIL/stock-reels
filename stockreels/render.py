@@ -44,8 +44,8 @@ def font(size):
     return _FONTS[size]
 
 
-# dates first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
-NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
+# dates and clock times first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
+NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|\d{1,2}:\d{2}|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
 
 
 def _visual(text):

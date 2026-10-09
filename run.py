@@ -30,7 +30,7 @@ def main():
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
     ap.add_argument("--fetch-logo", action="store_true", help="save the Instagram profile picture to assets/logo.jpg")
-    ap.add_argument("--highlights", help="post Highlight Story sets: 'all' or keys like bonds,basics")
+    ap.add_argument("--highlights", help="post Highlight Story sets: 'all', keys like bonds,basics, or basics@4 for one slide")
     ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
 
@@ -43,10 +43,13 @@ def main():
     if args.highlights:
         from stockreels import highlights
         keys = [h[0] for h in highlights.HIGHLIGHTS] if args.highlights == "all" else args.highlights.split(",")
-        for key in keys:
+        for key in keys:  # "basics@4" re-posts only slide 4 of a set
+            key, _, only = key.partition("@")
             out_dir = ROOT / "output" / f"highlight_{key}"
             out_dir.mkdir(parents=True, exist_ok=True)
             slides = highlights.render_set(key, out_dir)
+            if only:
+                slides = [slides[int(i)] for i in only.split("+")]
             highlights.cover(key, out_dir / "cover.png")
             if args.dry_run:
                 print(f"[highlights] rendered {key}: {len(slides)} slides")
