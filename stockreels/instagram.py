@@ -138,6 +138,11 @@ def _wait_and_publish(base, user_id, token, cid):
     else:
         raise TimeoutError("Instagram did not finish processing the video in 10 minutes")
 
-    published = _check(requests.post(f"{base}/{user_id}/media_publish", data={
-        "creation_id": cid, "access_token": token}, timeout=60))
-    return published["id"]
+    # Instagram sometimes answers "media not found" (2207006) right after FINISHED; it
+    # hasn't published anything then, so waiting and retrying is safe.
+    for attempt in range(4):
+        resp = requests.post(f"{base}/{user_id}/media_publish", data={
+            "creation_id": cid, "access_token": token}, timeout=60)
+        if resp.ok or attempt == 3 or not ("2207006" in resp.text or '"is_transient":true' in resp.text):
+            return _check(resp)["id"]
+        time.sleep(15 * (attempt + 1))
