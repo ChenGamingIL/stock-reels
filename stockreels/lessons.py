@@ -6,7 +6,7 @@ where visual names a diagram the renderer draws ("candle", "index", "trend", "le
 """
 import datetime as dt
 
-START = dt.date(2026, 10, 10)  # lesson 1 goes out on this date
+START = dt.date(2026, 10, 9)  # lesson 1 goes out on this date
 
 LESSONS = [
     ("מה זה שוק ההון?", [
