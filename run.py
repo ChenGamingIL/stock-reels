@@ -30,6 +30,7 @@ def main():
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
     ap.add_argument("--fetch-logo", action="store_true", help="save the Instagram profile picture to assets/logo.jpg")
+    ap.add_argument("--highlights", help="post Highlight Story sets: 'all' or keys like bonds,basics")
     ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
 
@@ -37,6 +38,22 @@ def main():
         from stockreels import instagram
         instagram.fetch_profile_picture(str(ROOT / "assets" / "logo.jpg"))
         print("[instagram] saved assets/logo.jpg")
+        return
+
+    if args.highlights:
+        from stockreels import highlights
+        keys = [h[0] for h in highlights.HIGHLIGHTS] if args.highlights == "all" else args.highlights.split(",")
+        for key in keys:
+            out_dir = ROOT / "output" / f"highlight_{key}"
+            out_dir.mkdir(parents=True, exist_ok=True)
+            slides = highlights.render_set(key, out_dir)
+            highlights.cover(key, out_dir / "cover.png")
+            if args.dry_run:
+                print(f"[highlights] rendered {key}: {len(slides)} slides")
+                continue
+            from stockreels import instagram
+            ids = instagram.publish_story_slides(slides, f"highlight-{key}-{dt.datetime.now():%Y%m%d-%H%M}")
+            print(f"[highlights] posted {key}: {ids}")
         return
 
     if args.check_instagram:

@@ -29,6 +29,9 @@ on:
         description: "Post only the Story slides (no Reel)"
         type: boolean
         default: false
+      highlights:
+        description: "Post Highlight Story sets ('all' or e.g. bonds,basics)"
+        required: false
       fetch_logo:
         description: "Save the Instagram profile picture to assets/logo.jpg"
         type: boolean
@@ -94,6 +97,10 @@ jobs:
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
           [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
           [ "${{ inputs.story_only }}" = "true" ] && ARGS="$ARGS --story-only"
+          if [ -n "${{ inputs.highlights }}" ]; then
+            ARGS="--highlights ${{ inputs.highlights }}"
+            [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          fi
           [ "${{ inputs.check_instagram }}" = "true" ] && ARGS="--check-instagram"
           [ "${{ inputs.fetch_logo }}" = "true" ] && ARGS="--fetch-logo"
           python run.py $ARGS
@@ -104,7 +111,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember today's ticker
-        if: ${{ steps.gate.outputs.run == 'true' && steps.gate.outputs.show == 'hot' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && steps.gate.outputs.show == 'hot' && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"

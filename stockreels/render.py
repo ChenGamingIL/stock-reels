@@ -444,6 +444,19 @@ def draw_visual(img, dr, kind, top):
                 h = 40 + 30 * math.sin(i * 1.7) ** 2 + (150 if i in (24, 25) else 0)
                 dr.rectangle([75 + i * 23, top + 600 - h, 90 + i * 23, top + 600], fill=GOLD_DARK)
         dr.line(pts, fill=GREEN if kind != "levels" else ACCENT, width=8, joint="curve")
+    elif kind == "bond":
+        # you lend at the start, get interest each year and the money back at maturity
+        y, xs = top + 300, [140 + i * 200 for i in range(5)]
+        dr.line([(100, y), (W - 100, y)], fill=GOLD_DARK, width=6)
+        dr.rectangle([xs[0] - 50, y, xs[0] + 50, y + 200], fill=RED)
+        rtl_text(dr, (xs[0], y + 230), "מלווים", 32, RED, anchor="ma")
+        for i, x in enumerate(xs[1:], 1):
+            h = 70 if i < 4 else 260
+            dr.rectangle([x - 40, y - h, x + 40, y], fill=GREEN if i == 4 else ACCENT)
+            dr.text((x, y + 20), f"{i}", font=font(34), fill=MUTED, anchor="ma")
+        rtl_text(dr, (xs[2], y - 110), "ריבית", 32, ACCENT, anchor="ma")
+        rtl_text(dr, (xs[4], y - 310), "ריבית + קרן", 32, GREEN, anchor="ma")
+        rtl_text(dr, (W // 2, y + 80), "שנים", 30, MUTED, anchor="ma")
     elif kind == "pe":
         dr.rounded_rectangle([140, top + 60, 470, top + 260], 26, fill=ACCENT)
         dr.text((305, top + 160), "$100", font=font(72), fill=INK, anchor="mm")
