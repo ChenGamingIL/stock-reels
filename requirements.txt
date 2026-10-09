@@ -1,0 +1,6 @@
+yfinance>=0.2.54
+anthropic>=0.40
+edge-tts>=6.1
+pillow>=10.1
+python-bidi>=0.4
+requests>=2.31
