@@ -87,6 +87,11 @@ def main():
             print("[shabbat] Shabbat or Yom Tov now, not posting until havdalah")
             return
 
+    if args.show == "shabbat" and args.dry_run:
+        from stockreels import shabbat
+        print(f"[shabbat] quiet now: {shabbat.is_quiet()}, times: {shabbat.candle_lighting()}")
+        return
+
     if args.show == "shabbat":
         from stockreels import shabbat
         info = None if args.sample else shabbat.candle_lighting()

@@ -11,8 +11,11 @@ TEL_AVIV = 293397  # GeoNames id
 
 def week_times(now=None):
     """Upcoming candle-lighting/havdalah windows plus this week's parasha, from Hebcal."""
-    items = requests.get(HEBCAL, params={"cfg": "json", "geonameid": TEL_AVIV, "M": "on", "lg": "he"},
-                         timeout=20).json().get("items", [])
+    resp = requests.get(HEBCAL, params={"cfg": "json", "geonameid": TEL_AVIV, "M": "on", "lg": "he"},
+                        timeout=20)
+    resp.raise_for_status()
+    items = resp.json().get("items", [])
+    print(f"[shabbat] hebcal: {[(i.get('category'), i.get('date')) for i in items]}")
     windows, start, parasha = [], None, None
     for it in sorted(items, key=lambda i: i["date"]):
         t = dt.datetime.fromisoformat(it["date"])
@@ -39,7 +42,10 @@ def is_quiet(now=None):
     try:
         windows, _ = week_times(now)
     except Exception as e:
-        print(f"[shabbat] Hebcal unavailable ({e.__class__.__name__}), using the fallback window")
+        print(f"[shabbat] Hebcal unavailable ({e.__class__.__name__}: {e})")
+        windows = []
+    if not windows:  # never risk posting on Shabbat because of a parsing problem
+        print("[shabbat] no times from Hebcal, using the fallback window")
         windows = [_fallback_window(now)]
     return any(a <= now <= b for a, b in windows)
 
@@ -49,7 +55,8 @@ def candle_lighting(now=None):
     now = now or dt.datetime.now(IL)
     try:
         windows, parasha = week_times(now)
-    except Exception:
+    except Exception as e:
+        print(f"[shabbat] Hebcal unavailable ({e.__class__.__name__}: {e})")
         return None
     upcoming = [w for w in windows if w[1] >= now]
     return (*upcoming[0], parasha) if upcoming else None
