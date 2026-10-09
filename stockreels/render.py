@@ -10,9 +10,11 @@ from .script import DISCLAIMER
 from .tts import synthesize
 
 W, H = 1080, 1920
-BG_TOP, BG_BOTTOM = (10, 14, 30), (20, 32, 64)
-WHITE, MUTED = (240, 244, 255), (150, 165, 200)
-GREEN, RED, ACCENT = (46, 204, 113), (231, 76, 60), (255, 196, 0)
+# Palette taken from the StocksisX logo: black, warm gold, green/red candles.
+BG_TOP, BG_BOTTOM = (6, 6, 6), (28, 22, 12)
+WHITE, MUTED = (246, 240, 226), (176, 158, 118)
+GREEN, RED = (52, 199, 106), (224, 72, 58)
+ACCENT, GOLD_DARK, INK = (232, 196, 120), (120, 94, 48), (12, 10, 6)
 
 ROOT = Path(__file__).resolve().parent.parent
 FONT_CANDIDATES = [
@@ -24,6 +26,8 @@ FONT_CANDIDATES = [
 ]
 FONT_FILE = next(p for p in FONT_CANDIDATES if p and os.path.exists(p))
 HAS_RAQM = features.check("raqm")
+LOGO_FILE = ROOT / "assets" / "logo.jpg"
+BRAND = os.environ.get("BRAND_NAME", "STOCKSISX")
 
 
 _FONTS = {}
@@ -40,7 +44,7 @@ def font(size):
     return _FONTS[size]
 
 
-NUM_RE = re.compile(r"[-+$]?\d[\d,.]*[%BMTx]?")
+NUM_RE = re.compile(r"\d{4}-\d{2}|[-+$]?\d[\d,.]*[%BMTx]?")
 
 
 def _visual(text):
@@ -69,6 +73,27 @@ def wrap(text, size, max_w):
     return lines + ([cur] if cur else [])
 
 
+def logo(size):
+    """The logo cropped to a circle, or None if assets/logo.jpg is missing."""
+    if not LOGO_FILE.exists():
+        return None
+    im = Image.open(LOGO_FILE).convert("RGB").resize((size, size), Image.LANCZOS)
+    mask = Image.new("L", (size * 4, size * 4), 0)
+    ImageDraw.Draw(mask).ellipse([0, 0, size * 4 - 1, size * 4 - 1], fill=255)
+    return im, mask.resize((size, size), Image.LANCZOS)
+
+
+def paste_logo(img, xy, size, ring=True):
+    lg = logo(size)
+    if not lg:
+        return
+    im, mask = lg
+    img.paste(im, xy, mask)
+    if ring:
+        ImageDraw.Draw(img).ellipse([xy[0] - 3, xy[1] - 3, xy[0] + size + 3, xy[1] + size + 3],
+                                    outline=ACCENT, width=4)
+
+
 def base(d, title):
     img = Image.new("RGB", (W, H))
     px = ImageDraw.Draw(img)
@@ -76,9 +101,11 @@ def base(d, title):
         t = y / H
         px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
     dr = ImageDraw.Draw(img)
-    # header: ticker badge + price
-    dr.rounded_rectangle([60, 120, 360, 220], 24, fill=ACCENT)
-    dr.text((210, 170), d["ticker"], font=font(64), fill=(10, 14, 30), anchor="mm")
+    # header: logo + ticker badge + price, gold rule underneath
+    paste_logo(img, (60, 105), 130)
+    dr.rounded_rectangle([215, 125, 475, 215], 22, fill=ACCENT)
+    dr.text((345, 170), d["ticker"], font=font(58), fill=INK, anchor="mm")
+    dr.line([(60, 268), (W - 60, 268)], fill=GOLD_DARK, width=3)
     if d.get("price"):
         dr.text((W - 60, 145), f"${d['price']:,.2f}", font=font(56), fill=WHITE, anchor="ra")
         ch = d.get("change_5d_pct")
@@ -86,7 +113,9 @@ def base(d, title):
             rtl_text(dr, (W - 60, 215), f"{ch:+.1f}% השבוע", 36, GREEN if ch >= 0 else RED)
     for i, line in enumerate(wrap(title, 76, W - 140)[:3]):
         rtl_text(dr, (W - 70, 330 + i * 100), line, 76)
-    # footer disclaimer, on every slide
+    # footer: brand + disclaimer, on every slide
+    dr.line([(60, H - 205), (W - 60, H - 205)], fill=GOLD_DARK, width=2)
+    dr.text((60, H - 250), f"@{BRAND.lower()}", font=font(32), fill=ACCENT)
     for i, line in enumerate(wrap(DISCLAIMER, 30, W - 120)):
         rtl_text(dr, (W - 60, H - 170 + i * 42), line, 30, MUTED)
     return img, dr
@@ -104,7 +133,7 @@ def slide_chart(d, sl):
     img, dr = base(d, sl["title"])
     pts = d.get("history") or []
     if len(pts) > 1:
-        x0, x1, y0, y1 = 80, W - 80, 700, 1500
+        x0, x1, y0, y1 = 80, W - 80, 700, 1400
         lo, hi = min(pts), max(pts)
         span = (hi - lo) or 1
         xy = [(x0 + (x1 - x0) * i / (len(pts) - 1), y1 - (y1 - y0) * (p - lo) / span) for i, p in enumerate(pts)]
@@ -120,7 +149,7 @@ def slide_chart(d, sl):
         dr.text((x1, y1 + 30), f"high ${hi:,.0f}", font=font(36), fill=MUTED, anchor="ra")
         ch = d.get("change_6m_pct")
         if ch is not None:
-            dr.text((W // 2, y1 + 130), f"{ch:+.1f}%", font=font(90), fill=color, anchor="ma")
+            dr.text((W // 2, y1 + 110), f"{ch:+.1f}%", font=font(90), fill=color, anchor="ma")
     return img
 
 
@@ -134,7 +163,7 @@ def slide_table(d, sl):
         dr.text((120, y), h[2], font=font(40), fill=MUTED)
         y += 90
     for row in sl["rows"]:
-        dr.rounded_rectangle([60, y - 20, W - 60, y + 110], 26, outline=(60, 80, 130), width=3)
+        dr.rounded_rectangle([60, y - 20, W - 60, y + 110], 26, fill=(22, 18, 10), outline=GOLD_DARK, width=3)
         rtl_text(dr, (W - 100, y + 18), row[0], 50)
         if len(row) == 2:
             dr.text((100, y + 18), row[1], font=font(56), fill=ACCENT)
@@ -160,8 +189,11 @@ def slide_bullets(d, sl):
 
 def slide_outro(d, sl):
     img, dr = base(d, sl["title"])
-    for i, line in enumerate(wrap(DISCLAIMER, 52, W - 160)):
-        rtl_text(dr, (W - 80, 800 + i * 74), line, 52, ACCENT)
+    paste_logo(img, ((W - 460) // 2, 600), 460)
+    dr = ImageDraw.Draw(img)
+    dr.text((W // 2, 1110), f"@{BRAND.lower()}", font=font(64), fill=ACCENT, anchor="ma")
+    for i, line in enumerate(wrap(DISCLAIMER, 44, W - 200)):
+        rtl_text(dr, (W - 100, 1240 + i * 62), line, 44, MUTED)
     return img
 
 

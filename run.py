@@ -55,9 +55,15 @@ def main():
         print("[upload] skipped")
         return
     from stockreels import instagram
-    media_id = instagram.publish_reel(str(video), sc["caption"], tag=f"reel-{dt.datetime.now():%Y%m%d-%H%M}-{stock['ticker']}")
+    media_id, video_url = instagram.publish_reel(
+        str(video), sc["caption"], tag=f"reel-{dt.datetime.now():%Y%m%d-%H%M}-{stock['ticker']}")
     data.save_to_history(stock["ticker"], today)
     print(f"[upload] published reel {media_id}")
+    if video_url:
+        try:  # a failed story shouldn't fail the day's run, the reel is already up
+            print(f"[upload] published story {instagram.publish_story(video_url)}")
+        except Exception as e:
+            print(f"[upload] story failed: {e}")
 
 
 if __name__ == "__main__":

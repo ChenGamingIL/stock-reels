@@ -73,6 +73,7 @@ def publish_reel(video_path, caption, tag="reel"):
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"
     params = {"media_type": "REELS", "caption": caption, "share_to_feed": "true", "access_token": token}
+    video_url = None  # only set when the video is hosted for the Instagram Login API
 
     if HOST == "graph.facebook.com":
         cid = _check(requests.post(f"{base}/{user_id}/media", data={**params, "upload_type": "resumable"},
@@ -87,6 +88,19 @@ def publish_reel(video_path, caption, tag="reel"):
         cid = _check(requests.post(f"{base}/{user_id}/media", data={**params, "video_url": video_url},
                                    timeout=60))["id"]
 
+    return _wait_and_publish(base, user_id, token, cid), video_url
+
+
+def publish_story(video_url):
+    """Post an already-hosted 9:16 video as a Story."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    base = f"https://{HOST}/{VERSION}"
+    cid = _check(requests.post(f"{base}/{user_id}/media", data={
+        "media_type": "STORIES", "video_url": video_url, "access_token": token}, timeout=60))["id"]
+    return _wait_and_publish(base, user_id, token, cid)
+
+
+def _wait_and_publish(base, user_id, token, cid):
     for _ in range(60):  # processing usually takes 30s to a few minutes
         status = _check(requests.get(f"{base}/{cid}", params={
             "fields": "status_code,status", "access_token": token}, timeout=30))
