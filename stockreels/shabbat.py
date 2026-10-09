@@ -11,8 +11,10 @@ TEL_AVIV = 293397  # GeoNames id
 
 def week_times(now=None):
     """Upcoming candle-lighting/havdalah windows plus this week's parasha, from Hebcal."""
-    resp = requests.get(HEBCAL, params={"cfg": "json", "geonameid": TEL_AVIV, "M": "on", "lg": "he"},
-                        timeout=20)
+    now = now or dt.datetime.now(IL)
+    # pass the date explicitly: without it Hebcal's cache sometimes answers for last week
+    resp = requests.get(HEBCAL, params={"cfg": "json", "geonameid": TEL_AVIV, "M": "on", "lg": "he",
+                                        "gy": now.year, "gm": now.month, "gd": now.day}, timeout=20)
     resp.raise_for_status()
     items = resp.json().get("items", [])
     print(f"[shabbat] hebcal: {[(i.get('category'), i.get('date')) for i in items]}")
