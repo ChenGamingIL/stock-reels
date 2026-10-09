@@ -25,6 +25,14 @@ def _check(resp):
     return resp.json()
 
 
+def check_connection():
+    """Read the account's username and confirm the token works, without posting."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    info = _check(requests.get(f"https://{HOST}/{VERSION}/{user_id}", params={
+        "fields": "username,account_type", "access_token": token}, timeout=30))
+    return info
+
+
 def publish_reel(video_path, caption):
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"

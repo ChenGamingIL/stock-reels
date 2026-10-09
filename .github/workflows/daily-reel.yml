@@ -15,6 +15,10 @@ on:
         description: "Build only, don't upload"
         type: boolean
         default: false
+      check_instagram:
+        description: "Only verify the Instagram connection"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -58,6 +62,7 @@ jobs:
           ARGS=""
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
           [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          [ "${{ inputs.check_instagram }}" = "true" ] && ARGS="--check-instagram"
           python run.py $ARGS
       - uses: actions/upload-artifact@v4
         if: steps.gate.outputs.run == 'true'
@@ -66,7 +71,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember today's ticker
-        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"

@@ -3,6 +3,7 @@
   python run.py                  # full run, uploads to Instagram
   python run.py --dry-run        # build the video only
   python run.py --ticker NVDA    # force a ticker
+  python run.py --check-instagram   # verify the Instagram token, post nothing
   python run.py --sample         # offline preview from sample_data.json (no market data, no upload)
 """
 import argparse
@@ -20,7 +21,13 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
+    ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
+
+    if args.check_instagram:
+        from stockreels import instagram
+        print(f"[instagram] connected: {instagram.check_connection()}")
+        return
 
     today = dt.date.today().isoformat()
     if args.sample:
