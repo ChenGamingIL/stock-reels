@@ -44,7 +44,8 @@ def font(size):
     return _FONTS[size]
 
 
-NUM_RE = re.compile(r"\d{4}-\d{2}|[-+$]?\d[\d,.]*[%BMTx]?")
+# dates first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
+NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
 
 
 def _visual(text):
@@ -110,7 +111,10 @@ def base(d, title):
     # header: logo + ticker badge + price, gold rule underneath
     paste_logo(img, (60, 105), 130)
     dr.rounded_rectangle([215, 125, 475, 215], 22, fill=ACCENT)
-    dr.text((345, 170), d["ticker"], font=font(58), fill=INK, anchor="mm")
+    size = 58
+    while font(size).getlength(d["ticker"]) > 230 and size > 24:
+        size -= 2
+    dr.text((345, 170), d["ticker"], font=font(size), fill=INK, anchor="mm")
     dr.line([(60, 268), (W - 60, 268)], fill=GOLD_DARK, width=3)
     if d.get("price"):
         dr.text((W - 60, 145), f"${d['price']:,.2f}", font=font(56), fill=WHITE, anchor="ra")
@@ -168,37 +172,60 @@ def slide_chart(d, sl):
     candles = d.get("candles") or []
     if len(candles) < 2:
         return slide_line_chart(d, sl, img, dr)
-    x0, x1, y0, y1 = 70, W - 190, 690, 1230     # price area, axis labels on the right
-    v0, v1 = 1260, 1390                          # volume bars
-    lo, hi = min(c[2] for c in candles), max(c[1] for c in candles)
-    pad = (hi - lo) * 0.06 or 1
-    lo, hi = lo - pad, hi + pad
-    py = lambda p: y1 - (y1 - y0) * (p - lo) / (hi - lo)
-    for i in range(5):  # price gridlines + labels
-        p = lo + (hi - lo) * i / 4
-        dr.line([(x0, py(p)), (x1, py(p))], fill=(48, 40, 24), width=2)
-        dr.text((x1 + 20, py(p)), f"{p:,.0f}", font=font(30), fill=MUTED, anchor="lm")
-    step = (x1 - x0) / len(candles)
-    body = max(step * 0.62, 4)
-    vmax = max(c[4] for c in candles) or 1
-    for i, (o, h, l, c, v) in enumerate(candles):
-        cx = x0 + step * (i + 0.5)
-        color = GREEN if c >= o else RED
-        dr.line([(cx, py(h)), (cx, py(l))], fill=color, width=3)
-        top, bot = sorted((py(o), py(c)))
-        dr.rectangle([cx - body / 2, top, cx + body / 2, max(bot, top + 3)], fill=color)
-        dim = tuple(int(a * 0.45 + b * 0.55) for a, b in zip(color, BG_BOTTOM))
-        dr.rectangle([cx - body / 2, v1 - (v1 - v0) * v / vmax, cx + body / 2, v1], fill=dim)
-    dr.text((x0, v0 - 8), "VOL", font=font(26), fill=MUTED, anchor="ls")
-    last = candles[-1][3]  # last price tag on the axis
-    dr.rounded_rectangle([x1 + 8, py(last) - 26, W - 20, py(last) + 26], 10, fill=ACCENT)
-    dr.text(((x1 + W - 12) / 2, py(last)), f"{last:,.2f}", font=font(30), fill=INK, anchor="mm")
+    draw_candles(img, dr, candles, (70, W - 190, 690, 1230), (1260, 1390))
     ch = d.get("change_6m_pct")
     if ch is not None:
         color = GREEN if ch >= 0 else RED
         dr.text((W // 2, 1440), f"{ch:+.1f}%", font=font(96), fill=color, anchor="ma")
         rtl_text(dr, (W // 2, 1560), "6 חודשים · כל נר = שבוע", 34, MUTED, anchor="ma")
     return img
+
+
+def draw_candles(img, dr, candles, box, vol=None, lines=(), levels=()):
+    """Candlesticks in box=(x0, x1, y0, y1), optional volume band vol=(v0, v1).
+
+    lines: [(series, color)] drawn over the candles (moving averages).
+    levels: [(price, label, color)] horizontal dashed levels with a tag on the right axis.
+    """
+    x0, x1, y0, y1 = box
+    prices = [c[1] for c in candles] + [c[2] for c in candles] + [p for p, _, _ in levels]
+    lo, hi = min(prices), max(prices)
+    pad = (hi - lo) * 0.06 or 1
+    lo, hi = lo - pad, hi + pad
+    py = lambda p: y1 - (y1 - y0) * (p - lo) / (hi - lo)
+    for i in range(5):  # price gridlines + labels
+        p = lo + (hi - lo) * i / 4
+        dr.line([(x0, py(p)), (x1, py(p))], fill=(48, 40, 24), width=2)
+        dr.text((x1 + 20, py(p)), f"{p:,.0f}" if hi > 50 else f"{p:,.2f}", font=font(30), fill=MUTED, anchor="lm")
+    step = (x1 - x0) / len(candles)
+    body = max(step * 0.62, 4)
+    vmax = max(c[4] for c in candles) or 1
+    for i, (o, h, l, c, v) in enumerate(candles):
+        cx = x0 + step * (i + 0.5)
+        color = GREEN if c >= o else RED
+        dr.line([(cx, py(h)), (cx, py(l))], fill=color, width=3 if step > 12 else 2)
+        top, bot = sorted((py(o), py(c)))
+        dr.rectangle([cx - body / 2, top, cx + body / 2, max(bot, top + 3)], fill=color)
+        if vol:
+            dim = tuple(int(a * 0.45 + b * 0.55) for a, b in zip(color, BG_BOTTOM))
+            dr.rectangle([cx - body / 2, vol[1] - (vol[1] - vol[0]) * v / vmax, cx + body / 2, vol[1]], fill=dim)
+    if vol:
+        dr.text((x0, vol[0] - 8), "VOL", font=font(26), fill=MUTED, anchor="ls")
+    for series, color in lines:
+        pts = [(x0 + step * (i + 0.5), py(v)) for i, v in enumerate(series) if v == v]
+        if len(pts) > 1:
+            dr.line(pts, fill=color, width=4, joint="curve")
+    for price, label, color in levels:
+        y = py(price)
+        for xx in range(int(x0), int(x1), 28):
+            dr.line([(xx, y), (min(xx + 16, x1), y)], fill=color, width=3)
+        dr.rounded_rectangle([x1 + 8, y - 24, W - 20, y + 24], 10, fill=color)
+        dr.text(((x1 + W - 12) / 2, y), f"{price:,.2f}", font=font(28), fill=INK, anchor="mm")
+        rtl_text(dr, (x1 - 10, y - 12), label, 30, color, anchor="rs")
+    if not levels:  # last price tag on the axis
+        last = candles[-1][3]
+        dr.rounded_rectangle([x1 + 8, py(last) - 26, W - 20, py(last) + 26], 10, fill=ACCENT)
+        dr.text(((x1 + W - 12) / 2, py(last)), f"{last:,.2f}", font=font(30), fill=INK, anchor="mm")
 
 
 def slide_line_chart(d, sl, img, dr):
@@ -318,7 +345,133 @@ def slide_outro(d, sl):
     return img
 
 
-RENDERERS = {"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
+def slide_intro(d, sl):
+    img, dr = base(d, sl["title"])
+    for i, line in enumerate(sl.get("lines", [])):
+        rtl_text(dr, (W - 70, 760 + i * 90), line, 52 if i == 0 else 44, ACCENT if i == 0 else MUTED)
+    paste_logo(img, ((W - 380) // 2, 1040), 380)
+    return img
+
+
+def slide_tiles(d, sl):
+    """2-column grid of market tiles: label, price, daily change."""
+    img, dr = base(d, sl["title"])
+    tiles = sl["tiles"][:10]
+    cols, gap, top = 2, 24, 640
+    tw = (W - 120 - gap) / cols
+    th = min(180, (1660 - top - gap * 4) / ((len(tiles) + 1) // 2))
+    for i, t in enumerate(tiles):
+        col, row = 1 - i % cols, i // cols  # first tile on the right (RTL)
+        x, y = 60 + col * (tw + gap), top + row * (th + gap)
+        color = GREEN if t["pct"] >= 0 else RED
+        dr.rounded_rectangle([x, y, x + tw, y + th], 22, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+        dr.rectangle([x + tw - 10, y + 18, x + tw - 4, y + th - 18], fill=color)
+        rtl_text(dr, (x + tw - 30, y + 18), t["label"], 34, MUTED)
+        dr.text((x + tw - 30, y + th - 22), f"{t['price']:,.{t['decimals']}f}", font=font(44), fill=WHITE, anchor="rs")
+        arrow(dr, x + 26, y + th - 42, t["pct"] >= 0, color, 11)
+        dr.text((x + 56, y + th - 22), f"{abs(t['pct']):.2f}%", font=font(38), fill=color, anchor="ls")
+    return img
+
+
+def slide_movers(d, sl):
+    img, dr = base(d, sl["title"])
+    y = 660
+    for label, rows, color in (("עולות", sl["movers"]["gainers"], GREEN), ("יורדות", sl["movers"]["losers"], RED)):
+        if not rows:
+            continue
+        rtl_text(dr, (W - 80, y), label, 42, color)
+        y += 80
+        for t, p in rows:
+            dr.rounded_rectangle([60, y - 16, W - 60, y + 104], 24, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+            dr.text((W - 100, y + 44), t, font=font(58), fill=WHITE, anchor="rm")
+            arrow(dr, 100, y + 44, p >= 0, color, 14)
+            dr.text((140, y + 44), f"{abs(p):.2f}%", font=font(54), fill=color, anchor="lm")
+            y += 140
+        y += 40
+    return img
+
+
+def slide_setup(d, sl):
+    img, dr = base(d, sl["title"])
+    s = sl["setup"]
+    draw_candles(img, dr, s["candles"], (60, W - 190, 640, 1320), (1350, 1460),
+                 lines=[(s["sma20_series"], ACCENT), (s["sma50_series"], (120, 160, 230))],
+                 levels=[(s["target"], "יעד", GREEN), (s["trigger"], "כניסה", ACCENT), (s["stop"], "סטופ", RED)])
+    y = 1530
+    dr.line([(80, y), (130, y)], fill=ACCENT, width=6)
+    dr.text((145, y), "SMA 20", font=font(30), fill=MUTED, anchor="lm")
+    dr.line([(330, y), (380, y)], fill=(120, 160, 230), width=6)
+    dr.text((395, y), "SMA 50", font=font(30), fill=MUTED, anchor="lm")
+    dr.text((W - 80, y), f"RSI {s['rsi']:.0f}", font=font(34), fill=WHITE, anchor="rm")
+    rtl_text(dr, (W - 80, 1590), "נר = יום · 3 חודשים · דוגמה לימודית", 30, MUTED)
+    return img
+
+
+def draw_visual(img, dr, kind, top):
+    """Small teaching diagrams for the lesson slides."""
+    cx = W // 2
+    if kind == "candle":
+        for x, (o, c, h, l) in ((cx - 200, (1, 3, 3.6, 0.5)), (cx + 200, (3, 1, 3.6, 0.5))):
+            color = GREEN if c > o else RED
+            yy = lambda v: top + 520 - v * 130
+            dr.line([(x, yy(h)), (x, yy(l))], fill=color, width=6)
+            dr.rectangle([x - 60, yy(max(o, c)), x + 60, yy(min(o, c))], fill=color)
+            for v, lab in ((h, "גבוה"), (max(o, c), "סגירה" if c > o else "פתיחה"),
+                           (min(o, c), "פתיחה" if c > o else "סגירה"), (l, "נמוך")):
+                if x < cx:
+                    rtl_text(dr, (x - 85, yy(v)), lab, 32, MUTED, anchor="rm")
+                else:
+                    rtl_text(dr, (x + 85, yy(v)), lab, 32, MUTED, anchor="lm")
+    elif kind == "index":
+        names = ["NVDA", "AAPL", "MSFT", "AMZN", "META", "GOOGL", "AVGO", "TSLA", "JPM", "..."]
+        for i, n in enumerate(names):
+            col, row = i % 5, i // 5
+            x, y = 90 + col * 185, top + row * 120
+            dr.rounded_rectangle([x, y, x + 165, y + 90], 16, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+            dr.text((x + 82, y + 45), n, font=font(34), fill=ACCENT, anchor="mm")
+        dr.text((cx, top + 320), "= S&P 500", font=font(64), fill=WHITE, anchor="ma")
+    elif kind in ("trend", "levels", "volume"):
+        import math
+        pts = [(80 + i * 23, top + 420 - i * 7 - 70 * math.sin(i / 3.2)) for i in range(40)]
+        if kind == "levels":
+            for y, lab, color in ((top + 140, "התנגדות", RED), (top + 400, "תמיכה", GREEN)):
+                for xx in range(80, W - 80, 30):
+                    dr.line([(xx, y), (xx + 18, y)], fill=color, width=4)
+                rtl_text(dr, (W - 80, y - 50), lab, 34, color)
+            pts = [(80 + i * 23, top + 270 - 125 * math.sin(i / 2.2)) for i in range(40)]
+        if kind == "volume":
+            for i in range(40):
+                h = 40 + 30 * math.sin(i * 1.7) ** 2 + (150 if i in (24, 25) else 0)
+                dr.rectangle([75 + i * 23, top + 600 - h, 90 + i * 23, top + 600], fill=GOLD_DARK)
+        dr.line(pts, fill=GREEN if kind != "levels" else ACCENT, width=8, joint="curve")
+    elif kind == "pe":
+        dr.rounded_rectangle([140, top + 60, 470, top + 260], 26, fill=ACCENT)
+        dr.text((305, top + 160), "$100", font=font(72), fill=INK, anchor="mm")
+        dr.text((cx, top + 160), "/", font=font(90), fill=MUTED, anchor="mm")
+        dr.rounded_rectangle([610, top + 60, 940, top + 260], 26, fill=(22, 18, 10), outline=ACCENT, width=3)
+        dr.text((775, top + 160), "$5", font=font(72), fill=WHITE, anchor="mm")
+        rtl_text(dr, (305, top + 300), "מחיר מניה", 32, MUTED, anchor="ma")
+        rtl_text(dr, (775, top + 300), "רווח למניה", 32, MUTED, anchor="ma")
+        dr.text((cx, top + 400), "P/E = 20", font=font(80), fill=GREEN, anchor="ma")
+
+
+def slide_lesson(d, sl):
+    img, dr = base(d, sl["title"])
+    lines = wrap(sl["text"], 60, W - 190)
+    y = 660
+    dr.rounded_rectangle([W - 82, y + 4, W - 70, y + len(lines) * 84 - 12], 6, fill=ACCENT)
+    for line in lines:
+        rtl_text(dr, (W - 110, y), line, 60)
+        y += 84
+    if sl.get("visual"):
+        draw_visual(img, dr, sl["visual"], max(y + 60, 960))
+    else:
+        paste_logo(img, ((W - 300) // 2, 1150), 300)
+    return img
+
+
+RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
+             "setup": slide_setup, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro}
 
 
@@ -328,7 +481,7 @@ def render_video(d, script, out_dir):
     segments = []
     for i, sl in enumerate(script["slides"]):
         png, mp3, seg = (out_dir / f"slide_{i}.{ext}" for ext in ("png", "mp3", "mp4"))
-        RENDERERS[sl["kind"]](d, sl).save(png)
+        RENDERERS[sl["kind"]]({**d, **sl.get("head", {})}, sl).save(png)
         dur = synthesize(sl["narration"], str(mp3)) + 0.4
         fade_out = max(dur - 0.25, 0)
         subprocess.run([

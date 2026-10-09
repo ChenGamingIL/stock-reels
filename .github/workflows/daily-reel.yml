@@ -2,12 +2,22 @@ name: Daily stock reel
 
 on:
   schedule:
-    # GitHub cron is UTC only. 08:00 Israel is 05:00 UTC in summer and 06:00 UTC in winter,
-    # so both fire and the "Israel 8am" step below lets only the right one through.
+    # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
+    # two crons and the "Israel time" step lets only the right one through:
+    # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 20:00 basics lesson.
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
+    - cron: "30 12 * * 1-5"
+    - cron: "30 13 * * 1-5"
+    - cron: "0 17 * * *"
+    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
+      show:
+        description: "Which show"
+        type: choice
+        options: [hot, premarket, lesson]
+        default: hot
       ticker:
         description: "Force a ticker (optional)"
         required: false
@@ -36,14 +46,20 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 30
     steps:
-      - name: Israel 8am
+      - name: Israel time
         id: gate
         run: |
-          if [ "${{ github.event_name }}" = "schedule" ] && [ "$(TZ=Asia/Jerusalem date +%H)" != "08" ]; then
-            echo "run=false" >> "$GITHUB_OUTPUT"
-          else
-            echo "run=true" >> "$GITHUB_OUTPUT"
+          if [ "${{ github.event_name }}" != "schedule" ]; then
+            echo "run=true" >> "$GITHUB_OUTPUT"; echo "show=${{ inputs.show || 'hot' }}" >> "$GITHUB_OUTPUT"; exit 0
           fi
+          case "$(TZ=Asia/Jerusalem date +%H)" in
+            08) show=hot ;;
+            15) show=premarket ;;
+            20) show=lesson ;;
+            *) show="" ;;
+          esac
+          echo "show=$show" >> "$GITHUB_OUTPUT"
+          [ -n "$show" ] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
         if: steps.gate.outputs.run == 'true'
       - uses: actions/setup-python@v5
@@ -74,7 +90,7 @@ jobs:
           TTS_REQUIRED: "1"
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          ARGS=""
+          ARGS="--show ${{ steps.gate.outputs.show }}"
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
           [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
           [ "${{ inputs.story_only }}" = "true" ] && ARGS="$ARGS --story-only"
@@ -88,7 +104,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember today's ticker
-        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && steps.gate.outputs.show == 'hot' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"
