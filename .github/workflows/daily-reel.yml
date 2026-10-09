@@ -15,6 +15,10 @@ on:
         description: "Build only, don't upload"
         type: boolean
         default: false
+      story_only:
+        description: "Post only the Story slides (no Reel)"
+        type: boolean
+        default: false
       fetch_logo:
         description: "Save the Instagram profile picture to assets/logo.jpg"
         type: boolean
@@ -67,6 +71,7 @@ jobs:
           ARGS=""
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
           [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
+          [ "${{ inputs.story_only }}" = "true" ] && ARGS="$ARGS --story-only"
           [ "${{ inputs.check_instagram }}" = "true" ] && ARGS="--check-instagram"
           [ "${{ inputs.fetch_logo }}" = "true" ] && ARGS="--fetch-logo"
           python run.py $ARGS
@@ -77,7 +82,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember today's ticker
-        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"

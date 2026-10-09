@@ -9,6 +9,7 @@
 import argparse
 import datetime as dt
 import json
+import os
 from pathlib import Path
 
 from stockreels import data, render, script
@@ -21,6 +22,7 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
+    ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
     ap.add_argument("--fetch-logo", action="store_true", help="save the Instagram profile picture to assets/logo.jpg")
     ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
@@ -55,15 +57,23 @@ def main():
         print("[upload] skipped")
         return
     from stockreels import instagram
-    media_id, video_url = instagram.publish_reel(
-        str(video), sc["caption"], tag=f"reel-{dt.datetime.now():%Y%m%d-%H%M}-{stock['ticker']}")
-    data.save_to_history(stock["ticker"], today)
-    print(f"[upload] published reel {media_id}")
-    if video_url:
-        try:  # a failed story shouldn't fail the day's run, the reel is already up
-            print(f"[upload] published story {instagram.publish_story(video_url)}")
-        except Exception as e:
-            print(f"[upload] story failed: {e}")
+    tag = f"reel-{dt.datetime.now():%Y%m%d-%H%M}-{stock['ticker']}"
+    slides = sorted(out_dir.glob("slide_*.png"), key=lambda p: int(p.stem.split("_")[1]))
+
+    if not args.story_only:
+        media_id, video_url = instagram.publish_reel(str(video), sc["caption"], tag=tag)
+        data.save_to_history(stock["ticker"], today)
+        print(f"[upload] published reel {media_id}")
+
+    # STORY_MODE: "slides" (each slide as a Story image, default), "video", "both" or "none"
+    mode = os.environ.get("STORY_MODE") or "slides"
+    try:  # a failed story shouldn't fail the day's run, the reel is already up
+        if mode in ("slides", "both"):
+            print(f"[upload] published story slides {instagram.publish_story_slides(slides, tag + '-story')}")
+        if mode in ("video", "both") and not args.story_only and video_url:
+            print(f"[upload] published story video {instagram.publish_story(video_url=video_url)}")
+    except Exception as e:
+        print(f"[upload] story failed: {e}")
 
 
 if __name__ == "__main__":

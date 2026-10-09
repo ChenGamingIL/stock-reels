@@ -55,18 +55,29 @@ def refresh_token():
     return resp["access_token"], resp.get("expires_in")
 
 
-def host_on_github(video_path, tag):
-    """Attach the video to a GitHub release and return its public download URL."""
-    repo, gh = os.environ["GITHUB_REPOSITORY"], os.environ["GITHUB_TOKEN"]
-    headers = {"Authorization": f"Bearer {gh}", "Accept": "application/vnd.github+json"}
-    release = _check(requests.post(f"https://api.github.com/repos/{repo}/releases", headers=headers,
-                                   json={"tag_name": tag, "name": tag, "body": "Daily reel"}, timeout=30))
-    with open(video_path, "rb") as f:
+def _gh_headers():
+    return {"Authorization": f"Bearer {os.environ['GITHUB_TOKEN']}", "Accept": "application/vnd.github+json"}
+
+
+def _create_release(tag):
+    repo = os.environ["GITHUB_REPOSITORY"]
+    return _check(requests.post(f"https://api.github.com/repos/{repo}/releases", headers=_gh_headers(),
+                                json={"tag_name": tag, "name": tag, "body": "Daily reel"}, timeout=30))["id"]
+
+
+def _upload_asset(release_id, path, name, content_type):
+    repo = os.environ["GITHUB_REPOSITORY"]
+    with open(path, "rb") as f:
         asset = _check(requests.post(
-            f"https://uploads.github.com/repos/{repo}/releases/{release['id']}/assets",
-            params={"name": "reel.mp4"}, headers={**headers, "Content-Type": "video/mp4"},
+            f"https://uploads.github.com/repos/{repo}/releases/{release_id}/assets",
+            params={"name": name}, headers={**_gh_headers(), "Content-Type": content_type},
             data=f.read(), timeout=300))
     return asset["browser_download_url"]
+
+
+def host_on_github(video_path, tag):
+    """Attach the video to a GitHub release and return its public download URL."""
+    return _upload_asset(_create_release(tag), video_path, "reel.mp4", "video/mp4")
 
 
 def publish_reel(video_path, caption, tag="reel"):
@@ -91,13 +102,28 @@ def publish_reel(video_path, caption, tag="reel"):
     return _wait_and_publish(base, user_id, token, cid), video_url
 
 
-def publish_story(video_url):
-    """Post an already-hosted 9:16 video as a Story."""
+def publish_story(video_url=None, image_url=None):
+    """Post an already-hosted 9:16 video or JPEG as a Story."""
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"
+    media = {"video_url": video_url} if video_url else {"image_url": image_url}
     cid = _check(requests.post(f"{base}/{user_id}/media", data={
-        "media_type": "STORIES", "video_url": video_url, "access_token": token}, timeout=60))["id"]
+        "media_type": "STORIES", **media, "access_token": token}, timeout=60))["id"]
     return _wait_and_publish(base, user_id, token, cid)
+
+
+def publish_story_slides(png_paths, tag):
+    """Post each slide as its own Story image, in order (Instagram needs JPEG)."""
+    from PIL import Image
+
+    release_id = _create_release(tag)
+    ids = []
+    for i, png in enumerate(png_paths):
+        jpg = str(png).rsplit(".", 1)[0] + ".jpg"
+        Image.open(png).convert("RGB").save(jpg, quality=92)
+        url = _upload_asset(release_id, jpg, f"story_{i}.jpg", "image/jpeg")
+        ids.append(publish_story(image_url=url))
+    return ids
 
 
 def _wait_and_publish(base, user_id, token, cid):
