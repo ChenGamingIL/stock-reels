@@ -7,7 +7,7 @@ Needs:
   IG_USER_ID       Instagram professional (business/creator) account id
   IG_ACCESS_TOKEN  long-lived token with instagram_content_publish permission
 Optional:
-  GRAPH_HOST       graph.facebook.com (Facebook Login, default) or graph.instagram.com (Instagram Login)
+  GRAPH_HOST       graph.instagram.com (Instagram Login, default) or graph.facebook.com (Facebook Login)
   GRAPH_VERSION    default v21.0
 """
 import os
@@ -15,7 +15,7 @@ import time
 
 import requests
 
-HOST = os.environ.get("GRAPH_HOST", "graph.facebook.com")
+HOST = os.environ.get("GRAPH_HOST") or "graph.instagram.com"
 VERSION = os.environ.get("GRAPH_VERSION", "v21.0")
 
 

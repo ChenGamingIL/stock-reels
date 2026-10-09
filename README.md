@@ -27,7 +27,7 @@ python run.py --ticker NVDA       # מניה ספציפית + העלאה
 1. להפוך את החשבון לחשבון מקצועי (Business או Creator).
 2. ב-developers.facebook.com ליצור אפליקציה ולהוסיף את המוצר "Instagram API with Instagram Login".
 3. לחבר את חשבון האינסטגרם, לבקש הרשאות `instagram_business_basic` ו-`instagram_business_content_publish`, ולהפיק טוקן ארוך-טווח (60 יום, ניתן לחידוש).
-4. במקרה הזה להוסיף ב-Settings > Variables משתנה `GRAPH_HOST=graph.instagram.com`. אם משתמשים בדרך הישנה (דף פייסבוק מקושר) משאירים את ברירת המחדל.
+4. אם משתמשים בדרך הישנה (דף פייסבוק מקושר), מוסיפים ב-Settings > Variables את `GRAPH_HOST=graph.facebook.com`.
 
 ## תזמון
 `.github/workflows/daily-reel.yml` רץ כל יום ב-08:00 שעון ישראל (מטפל לבד במעבר שעון קיץ/חורף), ואפשר להריץ ידנית מלשונית Actions (עם בחירת מניה או dry run). הסרטון נשמר גם כ-artifact של הריצה.
