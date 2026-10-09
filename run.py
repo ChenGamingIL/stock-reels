@@ -21,8 +21,15 @@ def main():
     ap.add_argument("--dry-run", action="store_true")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
+    ap.add_argument("--fetch-logo", action="store_true", help="save the Instagram profile picture to assets/logo.jpg")
     ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
+
+    if args.fetch_logo:
+        from stockreels import instagram
+        instagram.fetch_profile_picture(str(ROOT / "assets" / "logo.jpg"))
+        print("[instagram] saved assets/logo.jpg")
+        return
 
     if args.check_instagram:
         from stockreels import instagram

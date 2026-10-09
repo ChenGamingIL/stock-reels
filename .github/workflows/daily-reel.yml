@@ -15,6 +15,10 @@ on:
         description: "Build only, don't upload"
         type: boolean
         default: false
+      fetch_logo:
+        description: "Save the Instagram profile picture to assets/logo.jpg"
+        type: boolean
+        default: false
       check_instagram:
         description: "Only verify the Instagram connection"
         type: boolean
@@ -64,6 +68,7 @@ jobs:
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
           [ "${{ inputs.dry_run }}" = "true" ] && ARGS="$ARGS --dry-run"
           [ "${{ inputs.check_instagram }}" = "true" ] && ARGS="--check-instagram"
+          [ "${{ inputs.fetch_logo }}" = "true" ] && ARGS="--fetch-logo"
           python run.py $ARGS
       - uses: actions/upload-artifact@v4
         if: steps.gate.outputs.run == 'true'
@@ -72,8 +77,14 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember today's ticker
-        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"
           git add history.json && git commit -m "history: $(date +%F)" && git push || echo "nothing to commit"
+      - name: Save logo
+        if: ${{ inputs.fetch_logo == true }}
+        run: |
+          git config user.name "stock-reels-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add -f assets/logo.jpg && git commit -m "Add logo from Instagram profile" && git push

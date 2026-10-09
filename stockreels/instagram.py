@@ -34,6 +34,17 @@ def check_connection():
     return info
 
 
+def fetch_profile_picture(dest):
+    """Download the account's profile picture (the logo) to `dest`."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    info = _check(requests.get(f"https://{HOST}/{VERSION}/{user_id}", params={
+        "fields": "profile_picture_url", "access_token": token}, timeout=30))
+    img = requests.get(info["profile_picture_url"], timeout=60)
+    img.raise_for_status()
+    with open(dest, "wb") as f:
+        f.write(img.content)
+
+
 def refresh_token():
     """Exchange the current long-lived token for a fresh 60-day one (Instagram Login only).
 
