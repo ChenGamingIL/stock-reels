@@ -515,6 +515,41 @@ def slide_lesson(d, sl):
     return img
 
 
+def shabbat_card(parasha=None, candles=None, havdalah=None):
+    """Friday Story: two candles, Shabbat Shalom, this week's times."""
+    img = Image.new("RGB", (W, H))
+    px = ImageDraw.Draw(img)
+    for y in range(H):
+        t = y / H
+        px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    gd = ImageDraw.Draw(glow)
+    for cx in (W // 2 - 130, W // 2 + 130):  # soft warm glow around each flame
+        gd.ellipse([cx - 90, 435, cx + 90, 615], fill=(255, 190, 80, 110))
+    from PIL import ImageFilter
+    glow = glow.filter(ImageFilter.GaussianBlur(55))
+    img.paste(glow, (0, 0), glow)
+    dr = ImageDraw.Draw(img)
+    for cx in (W // 2 - 130, W // 2 + 130):
+        dr.rounded_rectangle([cx - 42, 600, cx + 42, 960], 14, fill=(246, 240, 226))
+        dr.line([(cx, 600), (cx, 570)], fill=(60, 50, 30), width=5)
+        dr.ellipse([cx - 26, 470, cx + 26, 580], fill=(255, 196, 80))
+        dr.ellipse([cx - 13, 515, cx + 13, 575], fill=(255, 244, 200))
+    dr.rounded_rectangle([W // 2 - 260, 950, W // 2 + 260, 985], 12, fill=ACCENT)
+    rtl_text(dr, (W // 2, 1060), "שבת שלום", 150, ACCENT, anchor="ma")
+    y = 1260
+    if parasha:
+        rtl_text(dr, (W // 2, y), parasha, 56, WHITE, anchor="ma")
+        y += 90
+    if candles and havdalah:
+        rtl_text(dr, (W // 2, y), f"הדלקת נרות {candles:%H:%M} · צאת שבת {havdalah:%H:%M}", 40, MUTED, anchor="ma")
+        rtl_text(dr, (W // 2, y + 56), "(תל אביב)", 32, MUTED, anchor="ma")
+        y += 120
+    rtl_text(dr, (W // 2, y + 20), "נחזור במוצאי שבת עם כל העדכונים", 44, WHITE, anchor="ma")
+    paste_logo(img, ((W - 170) // 2, 1640), 170)
+    return img
+
+
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro}

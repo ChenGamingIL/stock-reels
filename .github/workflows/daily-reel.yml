@@ -5,7 +5,8 @@ on:
     # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
     # two crons and the "Israel time" step lets only the right one through:
     # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
-    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri).
+    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri), Friday 14:00 Shabbat Shalom Story.
+    # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
     - cron: "30 12 * * 1-5"
@@ -14,6 +15,8 @@ on:
     - cron: "45 14 * * 1-5"
     - cron: "15 20 * * 1-5"
     - cron: "15 21 * * 1-5"
+    - cron: "0 11 * * 5"
+    - cron: "0 12 * * 5"
     - cron: "0 17 * * *"
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -21,7 +24,7 @@ on:
       show:
         description: "Which show"
         type: choice
-        options: [hot, premarket, open, lesson, close]
+        options: [hot, premarket, open, lesson, close, shabbat]
         default: hot
       ticker:
         description: "Force a ticker (optional)"
@@ -61,6 +64,7 @@ jobs:
             echo "run=true" >> "$GITHUB_OUTPUT"; echo "show=${{ inputs.show || 'hot' }}" >> "$GITHUB_OUTPUT"; exit 0
           fi
           case "$(TZ=Asia/Jerusalem date +%H)" in
+            14) [ "$(TZ=Asia/Jerusalem date +%u)" = 5 ] && show=shabbat || show="" ;;
             08) show=hot ;;
             15) show=premarket ;;
             16) show=open ;;

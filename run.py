@@ -65,7 +65,7 @@ def pick_story_slides(show, sc, out_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "close"], default="hot")
+    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "close", "shabbat"], default="hot")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
@@ -78,6 +78,27 @@ def main():
         from stockreels import instagram
         instagram.fetch_profile_picture(str(ROOT / "assets" / "logo.jpg"))
         print("[instagram] saved assets/logo.jpg")
+        return
+
+    posting = not (args.dry_run or args.sample or args.check_instagram or args.fetch_logo)
+    if posting:
+        from stockreels import shabbat
+        if shabbat.is_quiet():
+            print("[shabbat] Shabbat or Yom Tov now, not posting until havdalah")
+            return
+
+    if args.show == "shabbat":
+        from stockreels import shabbat
+        info = None if args.sample else shabbat.candle_lighting()
+        candles, havdalah, parasha = info if info else (None, None, None)
+        print(f"[shabbat] candles {candles} havdalah {havdalah} {parasha}")
+        out_dir = ROOT / "output" / f"{dt.date.today().isoformat()}_SHABBAT"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        card = out_dir / "shabbat.png"
+        render.shabbat_card(parasha, candles, havdalah).save(card)
+        if posting:
+            from stockreels import instagram
+            print(f"[upload] published shabbat story {instagram.publish_story_slides([card], f'shabbat-{dt.datetime.now():%Y%m%d-%H%M}')}")
         return
 
     if args.highlights:
