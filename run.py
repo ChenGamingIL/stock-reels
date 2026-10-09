@@ -48,7 +48,7 @@ def main():
         print("[upload] skipped")
         return
     from stockreels import instagram
-    media_id = instagram.publish_reel(str(video), sc["caption"])
+    media_id = instagram.publish_reel(str(video), sc["caption"], tag=f"reel-{dt.datetime.now():%Y%m%d-%H%M}-{stock['ticker']}")
     data.save_to_history(stock["ticker"], today)
     print(f"[upload] published reel {media_id}")
 

@@ -58,6 +58,7 @@ jobs:
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           GRAPH_HOST: ${{ vars.GRAPH_HOST }}
           TTS_REQUIRED: "1"
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARGS=""
           [ -n "${{ inputs.ticker }}" ] && ARGS="$ARGS --ticker ${{ inputs.ticker }}"
