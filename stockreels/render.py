@@ -200,6 +200,23 @@ def slide_hook(d, sl):
     return img
 
 
+def slide_fact(d, sl):
+    """'Did you know' opener: one huge number with what it measures."""
+    img, dr = base(d, sl["title"])
+    big = sl["big"]
+    color = RED if big.startswith("-") else GREEN if big.startswith(("+", "x")) else ACCENT
+    size = 300
+    while font(size).getlength(big) > W - 160 and size > 120:
+        size -= 10
+    dr.text((W // 2, 760), big, font=font(size), fill=color, anchor="ma")
+    y = 760 + size + 60
+    for line in wrap(sl["label"], 48, W - 200)[:2]:
+        rtl_text(dr, (W // 2, y), line, 48, MUTED, anchor="ma")
+        y += 66
+    paste_logo(img, ((W - 160) // 2, min(y + 60, CONTENT_BOTTOM - 170)), 160)
+    return img
+
+
 def slide_news(d, sl):
     """Real headlines with publisher and date: the 'why is it moving' evidence."""
     img, dr = base(d, sl["title"])
@@ -715,7 +732,7 @@ def shabbat_card(parasha=None, candles=None, havdalah=None):
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro, "news": slide_news, "analysts": slide_analysts,
-             "proscons": slide_proscons, "track": slide_track}
+             "proscons": slide_proscons, "track": slide_track, "fact": slide_fact}
 
 
 def caption_chunks(words, max_words=3, max_chars=20):

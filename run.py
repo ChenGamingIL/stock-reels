@@ -44,7 +44,7 @@ def polish_caption(caption, max_tags=5):
 # Instagram cuts reach for accounts posting more than ~4-5 Stories a day, so each show
 # posts only its strongest slide(s): 1 + 2 + 1 + 1 = 5 a day (the lesson lives in the feed).
 STORY_KINDS = {"hot": ["cover"], "premarket": ["tiles", "setup"], "open": ["tiles"],
-               "close": ["bars", "tiles"], "lesson": []}
+               "close": ["bars", "tiles"], "lesson": [], "didyouknow": []}
 
 
 def pick_story_slides(show, sc, out_dir):
@@ -65,7 +65,7 @@ def pick_story_slides(show, sc, out_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "close", "shabbat"], default="hot")
+    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "didyouknow", "close", "shabbat"], default="hot")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
@@ -167,6 +167,11 @@ def main():
             sc, name = shows.session_script(m), args.show.upper()
             stock = {"ticker": "LIVE" if args.show == "open" else "CLOSE", "market": market, "asof": data.asof()}
             args.story_only = True  # quick Story snapshots, no Reel
+        elif args.show == "didyouknow":
+            from stockreels import didyouknow
+            sc = didyouknow.script(ep)
+            name = f"DYK{ep}"
+            stock = {"ticker": "הידעת?", "market": market}
         else:
             sc = shows.lesson_script()
             name = f"LESSON{sc['number']}"
@@ -182,7 +187,7 @@ def main():
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
         sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
-               "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה"}[args.show]
+               "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}"}[args.show]
         render.cover(stock, first["title"], sub).save(out_dir / "cover.png")
         sc["caption"] = polish_caption(sc["caption"])
     (out_dir / "caption.txt").write_text(sc["caption"])

@@ -40,6 +40,7 @@ def ratio_rows(d):
         ("שולי רווח נקי", fmt_pct(r["profit_margin"]).lstrip("+")),
         ("צמיחה בהכנסות", fmt_pct(r["revenue_growth"])),
     ]
+    rows = [row for row in rows if not (row[0].startswith("מכפיל רווח") and (r["pe" if "עתידי" not in row[0] else "forward_pe"] or 0) <= 0)]
     return [row for row in rows if row[1] != "—"][:5]
 
 
@@ -94,6 +95,18 @@ def _llm_script(d):
     return json.loads(text)
 
 
+def ratios_narration(r):
+    pe, fpe = r.get("pe"), r.get("forward_pe")
+    if pe is not None and pe > 0:
+        txt = f"מכפיל הרווח עומד על {pe:.1f}"
+        txt += f", ומכפיל הרווח העתידי על {fpe:.1f}. " if fpe and fpe > 0 else ". "
+        return txt + "מכפיל נמוך יותר אומר שמשלמים פחות על כל דולר רווח."
+    if fpe and fpe > 0:
+        return (f"החברה עוד לא רווחית, אבל לפי התחזיות מכפיל הרווח העתידי שלה {fpe:.1f}. "
+                "כלומר השוק מצפה שתתחיל להרוויח.")
+    return "החברה עדיין מפסידה, ולכן אין לה מכפיל רווח. במקרה כזה מסתכלים על מכפיל המכירות ועל קצב הצמיחה."
+
+
 def _template_script(d):
     """Used when no ANTHROPIC_API_KEY is set, so the pipeline still runs end to end."""
     name, r = d["name"], d["ratios"]
@@ -108,8 +121,7 @@ def _template_script(d):
         "narration": {
             "hook": f"{name} {direction} {abs(move):.1f} אחוז בשבוע האחרון. בואו נבין למה כולם מדברים עליה.",
             "chart": f"ככה נראה המחיר בחצי השנה האחרונה: שינוי של {fmt_pct(d.get('change_6m_pct'), True)}.",
-            "ratios": f"מכפיל הרווח עומד על {fmt_x(r['pe'])}, ומכפיל הרווח העתידי על {fmt_x(r['forward_pe'])}. "
-                      "מכפיל נמוך יותר אומר שמשלמים פחות על כל דולר רווח.",
+            "ratios": ratios_narration(r),
             "earnings": earn_line,
             "why": "יש כאן צמיחה, רווחיות ועניין גדול מצד המשקיעים.",
             "risks": "מצד שני, התמחור והתנודתיות הם סיכון שצריך לקחת בחשבון.",

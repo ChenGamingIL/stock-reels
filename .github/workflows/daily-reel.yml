@@ -4,11 +4,13 @@ on:
   schedule:
     # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
     # two crons and the "Israel time" step lets only the one matching today's offset through:
-    # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
+    # 08:00 hot stock, 12:30 "did you know" episode, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
     # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri), Friday 14:00 Shabbat Shalom Story.
     # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
+    - cron: "30 9 * * *"
+    - cron: "30 10 * * *"
     - cron: "30 12 * * 1-5"
     - cron: "30 13 * * 1-5"
     - cron: "45 13 * * 1-5"
@@ -24,7 +26,7 @@ on:
       show:
         description: "Which show"
         type: choice
-        options: [hot, premarket, open, lesson, close, shabbat]
+        options: [hot, didyouknow, premarket, open, lesson, close, shabbat]
         default: hot
       ticker:
         description: "Force a ticker (optional)"
@@ -72,7 +74,7 @@ jobs:
           off = int(now.utcoffset().total_seconds() // 3600)
           slot = ((h + off) % 24, m)  # Israel time this cron stands for today
           # show, and how late it may still go out (hours): market shows lose their point after the bell
-          shows = {(8, 0): ("hot", 6), (15, 30): ("premarket", 0.9), (16, 45): ("open", 2),
+          shows = {(8, 0): ("hot", 6), (12, 30): ("didyouknow", 4), (15, 30): ("premarket", 0.9), (16, 45): ("open", 2),
                    (20, 0): ("lesson", 3), (23, 15): ("close", 3), (14, 0): ("shabbat", 1.5)}
           show, grace = shows.get(slot, ("", 0))
           due = now.replace(hour=slot[0], minute=slot[1], second=0, microsecond=0)
@@ -136,7 +138,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember the episode, today's ticker and today's pattern
-        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson","didyouknow"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"
