@@ -171,7 +171,8 @@ def fetch_news(t, n=3, max_age_days=10):
         items = t.news or []
     except Exception as e:
         print(f"[data] news unavailable: {e.__class__.__name__}")
-        return out
+        items = []
+    print(f"[news] yahoo returned {len(items)} items")
     now = dt.datetime.now(dt.timezone.utc)
     if items:
         c0 = items[0].get("content") or items[0]
@@ -193,7 +194,42 @@ def fetch_news(t, n=3, max_age_days=10):
         out.append({"title": title.strip(), "publisher": pub.strip(), "date": when.strftime("%d.%m")})
         if len(out) == n:
             break
-    return out
+    return out or google_news(t.ticker, n, max_age_days)
+
+
+def google_news(ticker, n=3, max_age_days=10):
+    """Fallback headlines from Google News RSS, which names the publisher of every item."""
+    import datetime as dt
+    import email.utils
+    import xml.etree.ElementTree as ET
+
+    import requests
+
+    try:
+        r = requests.get("https://news.google.com/rss/search",
+                         params={"q": f"{ticker} stock when:{max_age_days}d", "hl": "en-US", "gl": "US", "ceid": "US:en"},
+                         timeout=20, headers={"User-Agent": "Mozilla/5.0"})
+        r.raise_for_status()
+        items = ET.fromstring(r.content).findall("./channel/item")
+    except Exception as e:
+        print(f"[news] google unavailable: {e.__class__.__name__}")
+        return []
+    out = []
+    for it in items:
+        pub = (it.findtext("source") or "").strip()
+        title = (it.findtext("title") or "").strip()
+        if pub and title.endswith(" - " + pub):
+            title = title[: -len(pub) - 3].strip()
+        try:
+            when = email.utils.parsedate_to_datetime(it.findtext("pubDate"))
+        except Exception:
+            continue
+        if not pub or not title:
+            continue
+        out.append({"title": title, "publisher": pub, "date": when.strftime("%d.%m"), "ts": when.timestamp()})
+    print(f"[news] google returned {len(items)} items")
+    top = sorted(out[:n], key=lambda x: -x["ts"])  # most relevant few, newest first
+    return [{k: v for k, v in x.items() if k != "ts"} for x in top]
 
 
 INDICES = [("S&P 500", "^GSPC"), ("NASDAQ", "^IXIC"), ("DOW", "^DJI"), ("VIX", "^VIX")]
