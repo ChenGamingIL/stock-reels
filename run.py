@@ -71,6 +71,7 @@ def main():
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
     ap.add_argument("--fetch-logo", action="store_true", help="save the Instagram profile picture to assets/logo.jpg")
     ap.add_argument("--highlights", help="post Highlight Story sets: 'all', keys like bonds,basics, or basics@4 for one slide")
+    ap.add_argument("--when-due", action="store_true", help="shabbat: post only if it's ~30 min before candle lighting")
     ap.add_argument("--check-instagram", action="store_true", help="verify the token and exit")
     args = ap.parse_args()
 
@@ -94,16 +95,31 @@ def main():
 
     if args.show == "shabbat":
         from stockreels import shabbat
-        info = None if args.sample else shabbat.candle_lighting()
-        candles, havdalah, parasha = info if info else (None, None, None)
+        chag = False
+        if args.when_due:  # the 10-minute schedule: post only ~30 min before candle lighting, once
+            due = shabbat.story_due()
+            posted = ROOT / "posted.json"
+            done = json.loads(posted.read_text()) if posted.exists() else {}
+            key = (due[0] if due and due[0] else dt.datetime.now()).date().isoformat()
+            if not due or done.get("shabbat") == key:
+                print(f"[shabbat] not due now ({'already posted' if due else 'outside the window'})")
+                return
+            candles, havdalah, parasha, chag = due
+        else:
+            info = None if args.sample else shabbat.candle_lighting()
+            candles, havdalah, parasha = info if info else (None, None, None)
         print(f"[shabbat] candles {candles} havdalah {havdalah} {parasha}")
         out_dir = ROOT / "output" / f"{dt.date.today().isoformat()}_SHABBAT"
         out_dir.mkdir(parents=True, exist_ok=True)
         card = out_dir / "shabbat.png"
-        render.shabbat_card(parasha, candles, havdalah).save(card)
+        render.shabbat_card(parasha, candles, havdalah, chag).save(card)
         if posting:
             from stockreels import instagram
             print(f"[upload] published shabbat story {instagram.publish_story_slides([card], f'shabbat-{dt.datetime.now():%Y%m%d-%H%M}')}")
+            posted = ROOT / "posted.json"
+            done = json.loads(posted.read_text()) if posted.exists() else {}
+            done["shabbat"] = (candles or dt.datetime.now()).date().isoformat()
+            posted.write_text(json.dumps(done, indent=2))
         return
 
     if args.highlights:

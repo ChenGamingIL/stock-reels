@@ -1,0 +1,75 @@
+name: Shabbat Shalom story
+
+# Chen: the Shabbat Shalom (or Chag Sameach) Story goes up half an hour before candle lighting.
+# Candle lighting moves through the year, so this checks every 10 minutes in the afternoon
+# window (UTC) and posts only when Hebcal's Tel Aviv time is 8-40 minutes away; posted.json
+# keeps it to one Story per Shabbat or Yom Tov.
+on:
+  schedule:
+    - cron: "*/10 12-16 * * *"
+  workflow_dispatch:
+    inputs:
+      dry_run:
+        description: "Only report whether it is due"
+        type: boolean
+        default: true
+
+permissions:
+  contents: write
+
+concurrency:
+  group: shabbat-story
+  cancel-in-progress: false
+
+jobs:
+  story:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Due now?
+        id: due
+        run: |
+          pip install -q requests
+          python - <<'PY'
+          import json, os, datetime as dt
+          from stockreels import shabbat
+          due = shabbat.story_due()
+          done = json.load(open("posted.json")) if os.path.exists("posted.json") else {}
+          key = (due[0] if due and due[0] else dt.datetime.now(shabbat.IL)).date().isoformat()
+          go = bool(due) and done.get("shabbat") != key
+          print(f"due={due} posted={done.get('shabbat')} -> {go}")
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"go={'true' if go else 'false'}\n")
+          PY
+      - name: Install system packages
+        if: steps.due.outputs.go == 'true' && inputs.dry_run != true
+        run: |
+          for i in 1 2; do
+            timeout 240 sh -c 'sudo apt-get update && sudo apt-get install -y libraqm0' && exit 0
+          done
+          exit 1
+      - name: Download Hebrew font (Heebo)
+        if: steps.due.outputs.go == 'true' && inputs.dry_run != true
+        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+      - name: Post the Story
+        if: steps.due.outputs.go == 'true' && inputs.dry_run != true
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GRAPH_HOST: ${{ vars.GRAPH_HOST }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pip install -q -r requirements.txt
+          python run.py --show shabbat --when-due
+      - name: Remember it was posted
+        if: steps.due.outputs.go == 'true' && inputs.dry_run != true
+        run: |
+          git config user.name "stock-reels-bot"
+          git config user.email "actions@users.noreply.github.com"
+          git add posted.json
+          if git commit -m "shabbat story: $(date +%F)"; then
+            for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
+          fi

@@ -694,8 +694,8 @@ def slide_lesson(d, sl):
     return img
 
 
-def shabbat_card(parasha=None, candles=None, havdalah=None):
-    """Friday Story: two candles, Shabbat Shalom, this week's times."""
+def shabbat_card(parasha=None, candles=None, havdalah=None, chag=False):
+    """Story before candle lighting: two candles, Shabbat Shalom (or Chag Sameach), the times."""
     img = Image.new("RGB", (W, H))
     px = ImageDraw.Draw(img)
     for y in range(H):
@@ -715,16 +715,16 @@ def shabbat_card(parasha=None, candles=None, havdalah=None):
         dr.ellipse([cx - 26, 470, cx + 26, 580], fill=(255, 196, 80))
         dr.ellipse([cx - 13, 515, cx + 13, 575], fill=(255, 244, 200))
     dr.rounded_rectangle([W // 2 - 260, 950, W // 2 + 260, 985], 12, fill=ACCENT)
-    rtl_text(dr, (W // 2, 1060), "שבת שלום", 150, ACCENT, anchor="ma")
+    rtl_text(dr, (W // 2, 1060), "חג שמח" if chag else "שבת שלום", 150, ACCENT, anchor="ma")
     y = 1260
     if parasha:
         rtl_text(dr, (W // 2, y), parasha, 56, WHITE, anchor="ma")
         y += 90
     if candles and havdalah:
-        rtl_text(dr, (W // 2, y), f"הדלקת נרות {candles:%H:%M} · צאת שבת {havdalah:%H:%M}", 40, MUTED, anchor="ma")
+        rtl_text(dr, (W // 2, y), f"הדלקת נרות {candles:%H:%M} · צאת {'החג' if chag else 'שבת'} {havdalah:%H:%M}", 40, MUTED, anchor="ma")
         rtl_text(dr, (W // 2, y + 56), "(תל אביב)", 32, MUTED, anchor="ma")
         y += 120
-    rtl_text(dr, (W // 2, y + 20), "נחזור במוצאי שבת עם כל העדכונים", 44, WHITE, anchor="ma")
+    rtl_text(dr, (W // 2, y + 20), f"נחזור במוצאי {'החג' if chag else 'שבת'} עם כל העדכונים", 44, WHITE, anchor="ma")
     paste_logo(img, ((W - 170) // 2, 1640), 170)
     return img
 

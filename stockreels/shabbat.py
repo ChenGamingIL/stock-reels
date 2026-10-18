@@ -19,6 +19,8 @@ def week_times(now=None):
     items = resp.json().get("items", [])
     print(f"[shabbat] hebcal: {[(i.get('category'), i.get('date')) for i in items]}")
     windows, start, parasha = [], None, None
+    week_times.holidays = {it["date"][:10]: it.get("hebrew") or it.get("title")
+                           for it in items if it.get("category") == "holiday" and it.get("yomtov")}
     for it in sorted(items, key=lambda i: i["date"]):
         t = dt.datetime.fromisoformat(it["date"])
         if it["category"] == "candles" and start is None:
@@ -62,3 +64,29 @@ def candle_lighting(now=None):
         return None
     upcoming = [w for w in windows if w[1] >= now]
     return (*upcoming[0], parasha) if upcoming else None
+
+
+STORY_BEFORE = dt.timedelta(minutes=30)  # Chen: the Story goes up half an hour before candle lighting
+
+
+def story_due(now=None, early=dt.timedelta(minutes=40), late=dt.timedelta(minutes=8)):
+    """The coming Shabbat or Yom Tov if its Story is due now (about 30 minutes before candle
+    lighting), as (candles, havdalah, name, is_chag); otherwise None.
+
+    Runs are started every 10 minutes and GitHub may start them late, so any run between
+    40 and 8 minutes before candle lighting may post; posted.json keeps it to one.
+    """
+    now = now or dt.datetime.now(IL)
+    try:
+        windows, parasha = week_times(now)
+    except Exception as e:  # without times, still wish Shabbat Shalom early on Friday, well before any candle lighting
+        print(f"[shabbat] Hebcal unavailable ({e.__class__.__name__}), using Friday 13:30-15:15")
+        friday = now.weekday() == 4 and dt.time(13, 30) <= now.time() < dt.time(15, 15)
+        return (None, None, None, False) if friday else None
+    for candles, havdalah in windows:
+        if candles - early <= now < candles - late:
+            chag = getattr(week_times, "holidays", {}).get((candles + dt.timedelta(days=1)).date().isoformat())
+            if candles.weekday() == 4 and not chag:
+                return candles, havdalah, parasha, False
+            return candles, havdalah, chag or parasha, bool(chag)
+    return None

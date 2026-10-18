@@ -6,7 +6,7 @@ on:
     # two crons and the "Israel time" step lets only the one matching today's offset through
     # (market shows by New York's offset, so they keep their place around the bell):
     # 08:00 hot stock, 12:30 "did you know" episode, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
-    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri), Friday 14:00 Shabbat Shalom Story.
+    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri). The Shabbat Shalom Story is shabbat.yml.
     # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
     - cron: "0 5 * * *"
     - cron: "0 6 * * *"
@@ -18,8 +18,6 @@ on:
     - cron: "45 14 * * 1-5"
     - cron: "15 20 * * 1-5"
     - cron: "15 21 * * 1-5"
-    - cron: "0 11 * * 5"
-    - cron: "0 12 * * 5"
     - cron: "0 17 * * *"
     - cron: "0 18 * * *"
   workflow_dispatch:
@@ -75,7 +73,7 @@ jobs:
           # (clock, slot, show, hours it may still go out late). Market shows follow New York time,
           # so the pre-market review stays an hour before the bell when only one country changed clocks.
           slots = [("Asia/Jerusalem", (8, 0), "hot", 6), ("Asia/Jerusalem", (12, 30), "didyouknow", 4),
-                   ("Asia/Jerusalem", (14, 0), "shabbat", 1.5), ("Asia/Jerusalem", (20, 0), "lesson", 3),
+                   ("Asia/Jerusalem", (20, 0), "lesson", 3),
                    ("America/New_York", (8, 30), "premarket", 0.9), ("America/New_York", (9, 45), "open", 2),
                    ("America/New_York", (16, 15), "close", 3)]
           show = ""
