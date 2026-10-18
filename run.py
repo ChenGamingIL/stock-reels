@@ -188,6 +188,9 @@ def main():
     (out_dir / "caption.txt").write_text(sc["caption"])
     (out_dir / "script.json").write_text(json.dumps(sc, ensure_ascii=False, indent=2))
     print(f"[render] {video}")
+    for sl in sc["slides"]:
+        print(f"[script] {sl['kind']}: {sl['title']} | {sl.get('narration', '')[:160]}")
+    print("[caption] " + sc["caption"].replace("\n", " / "))
 
     if args.dry_run or args.sample:
         print("[upload] skipped")
