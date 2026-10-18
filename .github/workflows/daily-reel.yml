@@ -3,7 +3,7 @@ name: Daily stock reel
 on:
   schedule:
     # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
-    # two crons and the "Israel time" step lets only the right one through:
+    # two crons and the "Israel time" step lets only the one matching today's offset through:
     # 08:00 hot stock, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
     # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri), Friday 14:00 Shabbat Shalom Story.
     # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
@@ -63,15 +63,29 @@ jobs:
           if [ "${{ github.event_name }}" != "schedule" ]; then
             echo "run=true" >> "$GITHUB_OUTPUT"; echo "show=${{ inputs.show || 'hot' }}" >> "$GITHUB_OUTPUT"; exit 0
           fi
-          case "$(TZ=Asia/Jerusalem date +%H)" in
-            14) [ "$(TZ=Asia/Jerusalem date +%u)" = 5 ] && show=shabbat || show="" ;;
-            08) show=hot ;;
-            15) show=premarket ;;
-            16) show=open ;;
-            20) show=lesson ;;
-            23) show=close ;;
-            *) show="" ;;
-          esac
+          # GitHub often starts scheduled runs hours late, so go by which cron fired, not the clock
+          show=$(SCHEDULE="${{ github.event.schedule }}" python3 - <<'PY'
+          import datetime as dt, os
+          from zoneinfo import ZoneInfo
+          m, h = (int(x) for x in os.environ["SCHEDULE"].split()[:2])
+          now = dt.datetime.now(ZoneInfo("Asia/Jerusalem"))
+          off = int(now.utcoffset().total_seconds() // 3600)
+          slot = ((h + off) % 24, m)  # Israel time this cron stands for today
+          # show, and how late it may still go out (hours): market shows lose their point after the bell
+          shows = {(8, 0): ("hot", 6), (15, 30): ("premarket", 0.9), (16, 45): ("open", 2),
+                   (20, 0): ("lesson", 3), (23, 15): ("close", 3), (14, 0): ("shabbat", 1.5)}
+          show, grace = shows.get(slot, ("", 0))
+          due = now.replace(hour=slot[0], minute=slot[1], second=0, microsecond=0)
+          if due > now + dt.timedelta(hours=1):
+              due -= dt.timedelta(days=1)  # the 23:15 slot, picked up after midnight
+          late = (now - due).total_seconds() / 3600
+          if show and late > grace:
+              print(f"::warning::{show} started {late:.1f}h late, skipping", file=__import__("sys").stderr)
+              show = ""
+          print(show)
+          PY
+          )
+          echo "Israel $(TZ=Asia/Jerusalem date +%H:%M), cron '${{ github.event.schedule }}' -> '${show}'"
           echo "show=$show" >> "$GITHUB_OUTPUT"
           [ -n "$show" ] && echo "run=true" >> "$GITHUB_OUTPUT" || echo "run=false" >> "$GITHUB_OUTPUT"
       - uses: actions/checkout@v4
