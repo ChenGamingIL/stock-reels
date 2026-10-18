@@ -1,5 +1,7 @@
 """Data for the pre-market show: market overview, pre-market movers, earnings this week, a swing setup."""
 import datetime as dt
+import json
+from pathlib import Path
 
 from .data import WATCHLIST
 
@@ -137,6 +139,7 @@ def swing_setup(exclude=()):
                     "vol_ratio": round(vol_ratio, 2), "breakout_level": round(prior_high, 2),
                     "trigger": trigger, "stop": stop, "target": target,
                     "risk_pct": round((trigger - stop) / trigger * 100, 1),
+                    "recent_low": round(float(df["Low"].iloc[-5:].min()), 2),
                     "candles": [[round(float(x.Open), 2), round(float(x.High), 2), round(float(x.Low), 2),
                                  round(float(x.Close), 2), float(x.Volume)] for x in tail.itertuples()],
                     "sma20_series": [round(float(x), 2) for x in sma20.iloc[-60:]],
@@ -147,9 +150,77 @@ def swing_setup(exclude=()):
     return best
 
 
+SETUPS_FILE = Path(__file__).resolve().parent.parent / "setups.json"
+EXPIRE_DAYS = 5  # a pattern that never triggered within a week is closed as "not triggered"
+
+
+def load_setups():
+    return json.loads(SETUPS_FILE.read_text()) if SETUPS_FILE.exists() else []
+
+
+def log_setup(s, date_str):
+    """Keep every published pattern, so the next show can report how it played out, losers included."""
+    log = [e for e in load_setups() if e["date"] != date_str]
+    log.append({"date": date_str, "ticker": s["ticker"], "kind": s["kind"],
+                "trigger": s["trigger"], "stop": s["stop"], "target": s["target"]})
+    SETUPS_FILE.write_text(json.dumps(log[-300:], indent=2))
+
+
+def evaluate(e, df):
+    """How a logged pattern played out on daily bars from its date on.
+
+    status: worked (target before stop), failed (stop first, or both on the same day),
+    open (triggered, still running), waiting, or expired (never triggered).
+    """
+    bars = df[df.index.date >= dt.date.fromisoformat(e["date"])]
+    if not len(bars):
+        return {"status": "waiting", "move": 0.0}
+    last = float(bars["Close"].iloc[-1])
+    hit = None
+    for i, (_, b) in enumerate(bars.iterrows()):
+        if hit is None:
+            if b["High"] >= e["trigger"]:
+                hit = i
+            elif i + 1 >= EXPIRE_DAYS:
+                return {"status": "expired", "move": round((last / e["trigger"] - 1) * 100, 1)}
+        if hit is not None:
+            if b["Low"] <= e["stop"]:
+                return {"status": "failed", "move": round((e["stop"] / e["trigger"] - 1) * 100, 1)}
+            if b["High"] >= e["target"]:
+                return {"status": "worked", "move": round((e["target"] / e["trigger"] - 1) * 100, 1)}
+    if hit is None:
+        return {"status": "waiting", "move": round((last / e["trigger"] - 1) * 100, 1)}
+    return {"status": "open", "move": round((last / e["trigger"] - 1) * 100, 1)}
+
+
+def track_record(today=None):
+    """The latest earlier pattern with its outcome, plus a tally of every closed one."""
+    import yfinance as yf
+
+    today = today or dt.date.today().isoformat()
+    log = [e for e in load_setups() if e["date"] < today]
+    if not log:
+        return None
+    tally, latest = {"worked": 0, "failed": 0, "expired": 0}, None
+    cache = {}
+    for e in log:
+        try:
+            if e["ticker"] not in cache:
+                cache[e["ticker"]] = yf.Ticker(e["ticker"]).history(period="6mo", interval="1d").dropna()
+            r = evaluate(e, cache[e["ticker"]])
+        except Exception as ex:
+            print(f"[track] {e['ticker']}: {ex.__class__.__name__}")
+            continue
+        if r["status"] in tally:
+            tally[r["status"]] += 1
+        latest = {**e, **r}
+    return {"latest": latest, "tally": tally} if latest else None
+
+
 def fetch_premarket(exclude=()):
     movers, is_pre = premarket_movers()
     return {
+        "track": track_record(),
         "date": dt.date.today().isoformat(),
         "overview": overview(),
         "movers": movers,

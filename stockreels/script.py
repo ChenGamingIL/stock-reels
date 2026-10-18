@@ -113,7 +113,7 @@ def _template_script(d):
             "earnings": earn_line,
             "why": "יש כאן צמיחה, רווחיות ועניין גדול מצד המשקיעים.",
             "risks": "מצד שני, התמחור והתנודתיות הם סיכון שצריך לקחת בחשבון.",
-            "outro": "עקבו לעוד מניה חמה כל יום. וזכרו, זה לא ייעוץ השקעות.",
+            "outro": "",
         },
         "why": [f"צמיחה בהכנסות {fmt_pct(r['revenue_growth'])}", f"שולי רווח {fmt_pct(r['profit_margin']).lstrip('+')}",
                 "עניין גבוה של משקיעים"],
@@ -123,7 +123,52 @@ def _template_script(d):
     }
 
 
-def build_script(d):
+REC_HE = {"strong_buy": "קנייה חזקה", "buy": "קנייה", "hold": "החזקה", "underperform": "תשואת חסר",
+          "sell": "מכירה", "strong_sell": "מכירה חזקה"}
+
+
+def speak(text):
+    """On-screen numbers to something the Hebrew voice reads well."""
+    return (text.replace("P/E", "מכפיל רווח").replace("+", "").replace("%", " אחוז")
+            .replace("$", "").replace("  ", " "))
+
+
+def upside(d):
+    a, price = d.get("analysts") or {}, d.get("price")
+    return (a["target_mean"] / price - 1) * 100 if a.get("target_mean") and price else None
+
+
+def pros_cons(d):
+    """Bottom line from the numbers only, so every point can be checked on the earlier slides."""
+    r, le = d["ratios"], d.get("last_earnings") or {}
+    up, ch6, ch5 = upside(d), d.get("change_6m_pct"), d.get("change_5d_pct")
+    pros, cons = [], []
+    g, m, pe, de, sp = r.get("revenue_growth"), r.get("profit_margin"), r.get("pe"), r.get("debt_to_equity"), le.get("surprise_pct")
+    if g is not None:
+        (pros if g >= 0.08 else cons if g < 0 else []).append(f"{'צמיחה' if g >= 0 else 'ירידה'} בהכנסות {fmt_pct(g)}")
+    if m is not None:
+        if m >= 0.15:
+            pros.append(f"שולי רווח נקי {fmt_pct(m).lstrip('+')}")
+        elif m < 0:
+            cons.append("החברה עדיין מפסידה")
+    if sp is not None:
+        (pros if sp >= 0 else cons).append(f"{'הכתה' if sp >= 0 else 'פספוס'} של צפי הרווח: {sp:+.1f}%")
+    if up is not None:
+        (pros if up >= 10 else cons if up < 0 else []).append(f"יעד האנליסטים {up:+.0f}% מהמחיר")
+    if pe is not None and pe >= 40:
+        cons.append(f"תמחור גבוה: מכפיל רווח {pe:.0f}")
+    if de is not None and de > 150:
+        cons.append(f"חוב גבוה: פי {de / 100:.1f} מההון")
+    if ch5 is not None and abs(ch5) >= 8:
+        cons.append(f"תנודתיות: {ch5:+.1f}% בשבוע")
+    if ch6 is not None and ch6 <= -15:
+        cons.append(f"מגמה יורדת: {ch6:+.0f}% בחצי שנה")
+    if not cons:
+        cons.append("סיכון שוק: זזה עם המדדים")
+    return pros[:3], cons[:3]
+
+
+def build_script(d, episode=1, kicker=None):
     s = None
     if os.environ.get("ANTHROPIC_API_KEY"):
         try:
@@ -132,19 +177,42 @@ def build_script(d):
             print(f"[script] Claude failed, using template: {e}")
     s = s or _template_script(d)
     n = s["narration"]
+    name = d["name"]
     slides = [
-        {"kind": "hook", "title": s["hook"], "narration": n["hook"]},
-        {"kind": "chart", "title": "6 חודשים אחרונים", "narration": n["chart"]},
-        {"kind": "table", "title": "יחסים פיננסיים", "rows": ratio_rows(d), "narration": n["ratios"]},
+        {"kind": "hook", "title": s["hook"], "narration": n["hook"], "head": {"kicker": kicker} if kicker else {}},
+        {"kind": "chart", "title": "6 חודשים אחרונים", "narration": speak(n["chart"])},
+    ]
+    news = d.get("news") or []
+    if news:
+        pubs = list(dict.fromkeys(x["publisher"] for x in news))
+        slides.append({"kind": "news", "title": "מה מזיז את המניה", "news": news,
+                       "narration": f"מה מזיז את המניה? אלה הכותרות האחרונות, מ-{' ו-'.join(pubs[:2])}. "
+                                    "שימו לב לתאריך של כל כותרת."})
+    slides += [
         {"kind": "earnings", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
          "rows": earnings_rows(d), "narration": n["earnings"]},
-        {"kind": "bullets", "title": "למה היא מעניינת", "bullets": s["why"], "narration": n["why"]},
-        {"kind": "bullets", "title": "סיכונים", "bullets": s["risks"], "narration": n["risks"], "accent": "red"},
-        {"kind": "outro", "title": "עקבו למניה חמה כל יום", "narration": n["outro"]},
+        {"kind": "table", "title": "יחסים פיננסיים", "rows": ratio_rows(d), "narration": n["ratios"]},
     ]
+    a, up = d.get("analysts") or {}, upside(d)
+    if a.get("count") and up is not None:
+        slides.append({"kind": "analysts", "title": "מה אומרת וול סטריט", "analysts": a,
+                       "narration": f"{a['count']} אנליסטים מכסים את {name}"
+                                    + (f", והקונצנזוס הוא {REC_HE[a['key']]}" if a.get("key") in REC_HE else "")
+                                    + f". מחיר היעד הממוצע {a['target_mean']:.0f} דולר, {abs(up):.0f} אחוז "
+                                    + ("מעל ל" if up >= 0 else "מתחת ל") + "מחיר הנוכחי. וזכרו, גם אנליסטים טועים."})
+    pros, cons = pros_cons(d)
+    slides.append({"kind": "proscons", "title": "בשורה התחתונה", "pros": pros, "cons": cons,
+                   "narration": speak(("בשורה התחתונה. בעד: " + ", ".join(pros) + ". " if pros else "בשורה התחתונה. ")
+                                      + "נגד: " + ", ".join(cons) + ".")})
+    slides.append({"kind": "outro", "title": f"מחר 08:00 · פרק {episode + 1}",
+                   "narration": f"זה היה פרק {episode} של המניה החמה. מחר בשמונה, פרק {episode + 1}. "
+                                "שלחו לחבר שמשקיע, ועקבו כדי לא לפספס. זה לא ייעוץ השקעות."})
     slides = [sl for sl in slides if sl["kind"] not in ("table", "earnings") or sl["rows"]]
-    caption = s["caption"].strip()
-    if "ייעוץ" not in caption:
-        caption += "\n" + DISCLAIMER
-    caption += "\n\n" + " ".join("#" + h.lstrip("#").replace(" ", "") for h in s["hashtags"])
+    move = d.get("change_5d_pct") or 0
+    caption = (f"{name} ({d['ticker']}) {'עלתה' if move >= 0 else 'ירדה'} {abs(move):.1f}% השבוע. "
+               "מה מזיז את המניה, הדוחות, המכפילים" + (f", מה אומרים {a['count']} אנליסטים" if a.get("count") else "")
+               + " ובעד ונגד במספרים.\n"
+               + f"המניה החמה · פרק {episode} · כל בוקר ב-08:00\n"
+               + f"הנתונים: Yahoo Finance, נכון ל-{d.get('asof', '')}. {DISCLAIMER}\n\n"
+               + f"#{d['ticker']} #מניות #שוקההון #וולסטריט #השקעות")
     return {"slides": slides, "caption": caption}

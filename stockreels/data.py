@@ -126,6 +126,16 @@ def fetch_stock(ticker):
         },
         "analyst_target": _num(info.get("targetMeanPrice")),
         "recommendation": info.get("recommendationKey"),
+        "analysts": {
+            "count": int(info.get("numberOfAnalystOpinions") or 0),
+            "mean": _num(info.get("recommendationMean")),  # 1 strong buy .. 5 sell
+            "key": info.get("recommendationKey"),
+            "target_mean": _num(info.get("targetMeanPrice")),
+            "target_high": _num(info.get("targetHighPrice")),
+            "target_low": _num(info.get("targetLowPrice")),
+        },
+        "news": fetch_news(t),
+        "asof": asof(),
         "earnings": earnings,
         "last_earnings": surprise,
         "history": [round(float(x), 2) for x in hist.tolist()],
@@ -134,6 +144,45 @@ def fetch_stock(ticker):
                      round(float(r.Close), 2), float(r.Volume)] for r in weekly.itertuples()],
         "market": fetch_market(),
     }
+
+
+def asof():
+    """Data timestamp shown on every slide, Israel time."""
+    import datetime as dt
+    from zoneinfo import ZoneInfo
+
+    return dt.datetime.now(ZoneInfo("Asia/Jerusalem")).strftime("%d.%m.%y %H:%M")
+
+
+def fetch_news(t, n=3, max_age_days=10):
+    """Latest headlines as [{title, publisher, date}], newest first. Handles both yfinance news shapes."""
+    import datetime as dt
+
+    out = []
+    try:
+        items = t.news or []
+    except Exception as e:
+        print(f"[data] news unavailable: {e.__class__.__name__}")
+        return out
+    now = dt.datetime.now(dt.timezone.utc)
+    for it in items:
+        c = it.get("content") or it
+        title = c.get("title")
+        pub = (c.get("provider") or {}).get("displayName") or c.get("publisher")
+        when = c.get("pubDate") or c.get("displayTime")
+        try:
+            when = (dt.datetime.fromisoformat(when.replace("Z", "+00:00")) if isinstance(when, str)
+                    else dt.datetime.fromtimestamp(it["providerPublishTime"], dt.timezone.utc))
+        except Exception:
+            continue
+        if not title or not pub or (now - when).days > max_age_days:
+            continue
+        if (c.get("contentType") or "STORY").upper() not in ("STORY", "ARTICLE"):
+            continue
+        out.append({"title": title.strip(), "publisher": pub.strip(), "date": when.strftime("%d.%m")})
+        if len(out) == n:
+            break
+    return out
 
 
 INDICES = [("S&P 500", "^GSPC"), ("NASDAQ", "^IXIC"), ("DOW", "^DJI"), ("VIX", "^VIX")]

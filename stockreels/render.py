@@ -10,6 +10,9 @@ from .script import DISCLAIMER
 from .tts import synthesize
 
 W, H = 1080, 1920
+# burned-in captions sit in this band on Reels, so slide content ends above it
+CAP_Y, CAP_H = 1530, 120
+CONTENT_BOTTOM = CAP_Y - 20
 # Palette taken from the StocksisX logo: black, warm gold, green/red candles.
 BG_TOP, BG_BOTTOM = (6, 6, 6), (28, 22, 12)
 WHITE, MUTED = (246, 240, 226), (176, 158, 118)
@@ -121,11 +124,20 @@ def base(d, title):
         ch = d.get("change_5d_pct")
         if ch is not None:
             rtl_text(dr, (W - 60, 215), f"{ch:+.1f}% השבוע", 36, GREEN if ch >= 0 else RED)
+    ty = 330
+    if d.get("kicker"):  # series name and episode, on the first slide
+        f = font(36)
+        tw = f.getlength(_visual(d["kicker"])) + 48
+        dr.rounded_rectangle([W - 70 - tw, 292, W - 70, 352], 30, outline=ACCENT, width=3)
+        rtl_text(dr, (W - 94, 304), d["kicker"], 36, ACCENT)
+        ty = 384
     for i, line in enumerate(wrap(title, 76, W - 140)[:3]):
-        rtl_text(dr, (W - 70, 330 + i * 100), line, 76)
-    # footer: brand + disclaimer, on every slide
+        rtl_text(dr, (W - 70, ty + i * 100), line, 76)
+    # footer: brand, where the numbers come from and when, disclaimer, on every slide
     dr.line([(60, H - 205), (W - 60, H - 205)], fill=GOLD_DARK, width=2)
     dr.text((60, H - 250), f"@{BRAND.lower()}", font=font(32), fill=ACCENT)
+    if d.get("asof"):
+        rtl_text(dr, (W - 60, H - 248), f"נתונים: {d.get('source') or 'Yahoo Finance'} · \u2066{d['asof']}\u2069", 28, MUTED)
     for i, line in enumerate(wrap(DISCLAIMER, 30, W - 120)):
         rtl_text(dr, (W - 60, H - 170 + i * 42), line, 30, MUTED)
     return img, dr
@@ -160,10 +172,140 @@ def ticker_tape(dr, d):
 
 
 def slide_hook(d, sl):
+    """First frame carries the number: the week's move, big, with a sparkline under it."""
     img, dr = base(d, sl["title"])
-    rtl_text(dr, (W - 70, 760), d["name"], 60, MUTED)
-    if d.get("sector"):
-        rtl_text(dr, (W - 70, 850), d["sector"], 44, MUTED)
+    ch = d.get("change_5d_pct")
+    y = 700
+    if ch is not None:
+        color = GREEN if ch >= 0 else RED
+        dr.text((W // 2, y), f"{ch:+.1f}%", font=font(220), fill=color, anchor="ma")
+        rtl_text(dr, (W // 2, y + 260), "בשבוע האחרון", 48, MUTED, anchor="ma")
+        y += 360
+    pts = (d.get("history") or [])[-30:]
+    if len(pts) > 1:
+        lo, hi = min(pts), max(pts)
+        span = (hi - lo) or 1
+        x0, x1, y0, y1 = 140, W - 140, y + 20, y + 240
+        xy = [(x0 + (x1 - x0) * i / (len(pts) - 1), y1 - (y1 - y0) * (v - lo) / span) for i, v in enumerate(pts)]
+        dr.line(xy, fill=ACCENT, width=7, joint="curve")
+        dr.ellipse([xy[-1][0] - 13, xy[-1][1] - 13, xy[-1][0] + 13, xy[-1][1] + 13], fill=ACCENT)
+        y = y1 + 50
+    rtl_text(dr, (W // 2, y), " · ".join(x for x in (d.get("name"), d.get("sector")) if x), 40, MUTED, anchor="ma")
+    return img
+
+
+def slide_news(d, sl):
+    """Real headlines with publisher and date: the 'why is it moving' evidence."""
+    img, dr = base(d, sl["title"])
+    y = 640
+    for n in sl["news"][:3]:
+        lines = wrap(n["title"], 44, W - 200)[:3]
+        h = 90 + len(lines) * 58
+        if y + h > CONTENT_BOTTOM:
+            break
+        dr.rounded_rectangle([60, y, W - 60, y + h], 24, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+        dr.rectangle([W - 70, y + 20, W - 64, y + h - 20], fill=ACCENT)
+        dr.text((100, y + 26), n["publisher"], font=font(32), fill=ACCENT)
+        dr.text((W - 100, y + 26), n["date"], font=font(32), fill=MUTED, anchor="ra")
+        for j, line in enumerate(lines):
+            dr.text((100, y + 84 + j * 58), line, font=font(44), fill=WHITE)
+        y += h + 30
+    return img
+
+
+REC_HE = {"strong_buy": "קנייה חזקה", "buy": "קנייה", "hold": "החזקה", "underperform": "תשואת חסר",
+          "sell": "מכירה", "strong_sell": "מכירה חזקה", "none": "אין"}
+
+
+def slide_analysts(d, sl):
+    """Wall Street consensus (third-party data): rating scale and the 12-month target range."""
+    img, dr = base(d, sl["title"])
+    a = sl["analysts"]
+    y = 650
+    rtl_text(dr, (W - 80, y), f"{a['count']} אנליסטים · קונצנזוס: {REC_HE.get(a.get('key') or 'none', a.get('key'))}", 46)
+    if a.get("mean"):
+        y += 110
+        x0, x1 = 100, W - 100
+        segs = [(GREEN, "קנייה חזקה"), ((120, 200, 110), "קנייה"), (ACCENT, "החזקה"), ((230, 140, 80), "מכירה"), (RED, "מכירה חזקה")]
+        sw = (x1 - x0) / 5
+        for i, (c, lab) in enumerate(segs):  # right to left: strong buy on the right
+            xa = x1 - sw * (i + 1)
+            dr.rounded_rectangle([xa + 4, y, xa + sw - 4, y + 34], 10, fill=c)
+            rtl_text(dr, (xa + sw / 2, y + 50), lab, 26, MUTED, anchor="ma")
+        mx = x1 - (x1 - x0) * (a["mean"] - 1) / 4
+        dr.polygon([(mx - 20, y - 34), (mx + 20, y - 34), (mx, y - 4)], fill=WHITE)
+        dr.text((mx, y - 44), f"{a['mean']:.1f}", font=font(34), fill=WHITE, anchor="ms")
+        y += 150
+    lo, mean, hi, price = a.get("target_low"), a.get("target_mean"), a.get("target_high"), d.get("price")
+    if lo and hi and mean and price:
+        rtl_text(dr, (W - 80, y), "מחיר יעד ל-12 חודשים", 40, MUTED)
+        y += 150
+        vmin, vmax = min(lo, price), max(hi, price)
+        x0, x1 = 120, W - 120
+        px = lambda v: x0 + (x1 - x0) * (v - vmin) / ((vmax - vmin) or 1)
+        dr.line([(px(lo), y), (px(hi), y)], fill=GOLD_DARK, width=14)
+        for v, lab, c, up in ((lo, "נמוך", MUTED, False), (hi, "גבוה", MUTED, False), (mean, "ממוצע", ACCENT, True)):
+            dr.ellipse([px(v) - 14, y - 14, px(v) + 14, y + 14], fill=c)
+            dr.text((px(v), y + 34), f"${v:,.0f}", font=font(32), fill=c, anchor="ma")
+            rtl_text(dr, (px(v), y + 76), lab, 28, MUTED, anchor="ma")
+        dr.line([(px(price), y - 60), (px(price), y + 20)], fill=WHITE, width=5)
+        rtl_text(dr, (px(price), y - 70), f"עכשיו ${price:,.0f}", 32, WHITE, anchor="ms")
+        up = (mean / price - 1) * 100
+        y += 190
+        rtl_text(dr, (W // 2, y), f"{up:+.1f}% עד היעד הממוצע", 54, GREEN if up >= 0 else RED, anchor="ma")
+    return img
+
+
+def slide_proscons(d, sl):
+    """Bottom line in numbers: green points for, red points against."""
+    img, dr = base(d, sl["title"])
+    y = 650
+    for items, color, label in ((sl["pros"], GREEN, "בעד"), (sl["cons"], RED, "נגד")):
+        if not items:
+            continue
+        rtl_text(dr, (W - 80, y), label, 42, color)
+        y += 72
+        for b in items:
+            dr.rounded_rectangle([60, y - 8, W - 60, y + 92], 22, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+            dr.rectangle([W - 70, y + 12, W - 64, y + 72], fill=color)
+            rtl_text(dr, (W - 100, y + 42), b, 46, WHITE, anchor="rm")
+            y += 112
+        y += 30
+    return img
+
+
+STATUS_HE = {"worked": ("הדפוס עבד", GREEN), "failed": ("הדפוס נכשל", RED), "open": ("עדיין פתוח", ACCENT),
+             "waiting": ("עוד לא הופעל", MUTED), "expired": ("לא הופעל, נסגר", MUTED)}
+
+
+def slide_track(d, sl):
+    """Honest follow-up on the previous pattern, and the running tally including the failures."""
+    img, dr = base(d, sl["title"])
+    t = sl["track"]
+    e = t["latest"]
+    label, color = STATUS_HE[e["status"]]
+    y = 650
+    dr.rounded_rectangle([60, y, W - 60, y + 330], 28, fill=(22, 18, 10), outline=GOLD_DARK, width=3)
+    dr.text((W - 100, y + 40), e["ticker"], font=font(72), fill=WHITE, anchor="ra")
+    day = f"{e['date'][8:10]}.{e['date'][5:7]}"
+    rtl_text(dr, (W - 100, y + 140), f"הדפוס מ-{day} · {'פריצה' if e['kind'] == 'breakout' else 'פולבק'}", 38, MUTED)
+    dr.rounded_rectangle([100, y + 40, 470, y + 130], 22, fill=color)
+    rtl_text(dr, (285, y + 85), label, 42, INK, anchor="mm")
+    if e["status"] != "waiting":
+        dr.text((285, y + 200), f"{e['move']:+.1f}%", font=font(80), fill=GREEN if e["move"] >= 0 else RED, anchor="mm")
+    rtl_text(dr, (W - 100, y + 230), "מנקודת ההפעלה", 34, MUTED)
+    y += 400
+    tl = t["tally"]
+    closed = tl["worked"] + tl["failed"]
+    rtl_text(dr, (W - 80, y), "כל הדפוסים שפרסמנו עד היום", 40, MUTED)
+    y += 80
+    for i, (k, lab, c) in enumerate((("worked", "עבדו", GREEN), ("failed", "נכשלו", RED), ("expired", "לא הופעלו", MUTED))):
+        x = W - 60 - (i + 1) * 320 + 20
+        dr.rounded_rectangle([x, y, x + 300, y + 190], 24, fill=(22, 18, 10), outline=c, width=3)
+        dr.text((x + 150, y + 30), str(tl[k]), font=font(84), fill=c, anchor="ma")
+        rtl_text(dr, (x + 150, y + 136), lab, 34, MUTED, anchor="ma")
+    if closed:
+        rtl_text(dr, (W // 2, y + 240), f"אחוז הצלחה: {tl['worked'] / closed * 100:.0f}% מתוך {closed} שנסגרו", 38, WHITE, anchor="ma")
     return img
 
 
@@ -172,20 +314,20 @@ def slide_chart(d, sl):
     candles = d.get("candles") or []
     if len(candles) < 2:
         return slide_line_chart(d, sl, img, dr)
-    draw_candles(img, dr, candles, (70, W - 190, 690, 1230), (1260, 1390))
+    draw_candles(img, dr, candles, (70, W - 190, 640, 1130), (1160, 1270))
     ch = d.get("change_6m_pct")
     if ch is not None:
         color = GREEN if ch >= 0 else RED
-        dr.text((W // 2, 1440), f"{ch:+.1f}%", font=font(96), fill=color, anchor="ma")
-        rtl_text(dr, (W // 2, 1560), "6 חודשים · כל נר = שבוע", 34, MUTED, anchor="ma")
+        dr.text((W // 2, 1300), f"{ch:+.1f}%", font=font(96), fill=color, anchor="ma")
+        rtl_text(dr, (W // 2, 1420), "6 חודשים · כל נר = שבוע", 34, MUTED, anchor="ma")
     return img
 
 
-def draw_candles(img, dr, candles, box, vol=None, lines=(), levels=()):
+def draw_candles(img, dr, candles, box, vol=None, lines=(), levels=(), tags=True):
     """Candlesticks in box=(x0, x1, y0, y1), optional volume band vol=(v0, v1).
 
     lines: [(series, color)] drawn over the candles (moving averages).
-    levels: [(price, label, color)] horizontal dashed levels with a tag on the right axis.
+    levels: [(price, label, color)] horizontal dashed levels, with a price tag on the right axis if tags.
     """
     x0, x1, y0, y1 = box
     prices = [c[1] for c in candles] + [c[2] for c in candles] + [p for p, _, _ in levels]
@@ -219,8 +361,9 @@ def draw_candles(img, dr, candles, box, vol=None, lines=(), levels=()):
         y = py(price)
         for xx in range(int(x0), int(x1), 28):
             dr.line([(xx, y), (min(xx + 16, x1), y)], fill=color, width=3)
-        dr.rounded_rectangle([x1 + 8, y - 24, W - 20, y + 24], 10, fill=color)
-        dr.text(((x1 + W - 12) / 2, y), f"{price:,.2f}", font=font(28), fill=INK, anchor="mm")
+        if tags:
+            dr.rounded_rectangle([x1 + 8, y - 24, W - 20, y + 24], 10, fill=color)
+            dr.text(((x1 + W - 12) / 2, y), f"{price:,.2f}", font=font(28), fill=INK, anchor="mm")
         rtl_text(dr, (x1 - 10, y - 12), label, 30, color, anchor="rs")
     if not levels:  # last price tag on the axis
         last = candles[-1][3]
@@ -302,7 +445,7 @@ def slide_earnings(d, sl):
     qs = [e for e in d.get("earnings") or [] if e.get("revenue")][-4:]
     if qs:
         rtl_text(dr, (W - 80, y), "הכנסות לפי רבעון", 40, MUTED)
-        top, base_y = y + 120, 1490 if y < 900 else 1530
+        top, base_y = y + 120, 1400
         rmax = max(e["revenue"] for e in qs)
         slot = (W - 160) / len(qs)
         bw = slot * 0.56
@@ -359,7 +502,7 @@ def slide_tiles(d, sl):
     tiles = sl["tiles"][:10]
     cols, gap, top = 2, 24, 640
     tw = (W - 120 - gap) / cols
-    th = min(180, (1660 - top - gap * 4) / ((len(tiles) + 1) // 2))
+    th = min(170, (CONTENT_BOTTOM - top - gap * 4) / ((len(tiles) + 1) // 2))
     for i, t in enumerate(tiles):
         col, row = 1 - i % cols, i // cols  # first tile on the right (RTL)
         x, y = 60 + col * (tw + gap), top + row * (th + gap)
@@ -380,14 +523,14 @@ def slide_movers(d, sl):
         if not rows:
             continue
         rtl_text(dr, (W - 80, y), label, 42, color)
-        y += 80
+        y += 70
         for t, p in rows:
-            dr.rounded_rectangle([60, y - 16, W - 60, y + 104], 24, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
-            dr.text((W - 100, y + 44), t, font=font(58), fill=WHITE, anchor="rm")
-            arrow(dr, 100, y + 44, p >= 0, color, 14)
-            dr.text((140, y + 44), f"{abs(p):.2f}%", font=font(54), fill=color, anchor="lm")
-            y += 140
-        y += 40
+            dr.rounded_rectangle([60, y - 10, W - 60, y + 90], 24, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
+            dr.text((W - 100, y + 40), t, font=font(54), fill=WHITE, anchor="rm")
+            arrow(dr, 100, y + 40, p >= 0, color, 14)
+            dr.text((140, y + 40), f"{abs(p):.2f}%", font=font(50), fill=color, anchor="lm")
+            y += 116
+        y += 24
     return img
 
 
@@ -395,7 +538,7 @@ def slide_bars(d, sl):
     """Horizontal bars around a zero line, e.g. sector performance."""
     img, dr = base(d, sl["title"])
     bars = sl["bars"][:11]
-    top, rowh, mid = 640, min(90, 1000 / max(len(bars), 1)), 330
+    top, rowh, mid = 640, min(90, (CONTENT_BOTTOM - 660) / max(len(bars), 1)), 330
     span = max(abs(p) for _, p in bars) or 1
     dr.line([(mid, top - 20), (mid, top + rowh * len(bars))], fill=GOLD_DARK, width=3)
     for i, (name, p) in enumerate(bars):
@@ -424,18 +567,22 @@ def cover(d, title, sub=""):
 
 
 def slide_setup(d, sl):
+    """The pattern on the chart, for teaching: structure levels only, no entry, stop or target prices."""
     img, dr = base(d, sl["title"])
     s = sl["setup"]
-    draw_candles(img, dr, s["candles"], (60, W - 190, 640, 1320), (1350, 1460),
+    levels = [(s["recent_low"], "השפל האחרון", RED)] if s.get("recent_low") else []
+    if s["kind"] == "breakout":
+        levels.insert(0, (s["breakout_level"], "השיא של 20 יום", ACCENT))
+    draw_candles(img, dr, s["candles"], (60, W - 190, 640, 1210), (1240, 1330),
                  lines=[(s["sma20_series"], ACCENT), (s["sma50_series"], (120, 160, 230))],
-                 levels=[(s["target"], "יעד", GREEN), (s["trigger"], "כניסה", ACCENT), (s["stop"], "סטופ", RED)])
-    y = 1530
+                 levels=levels, tags=False)
+    y = 1390
     dr.line([(80, y), (130, y)], fill=ACCENT, width=6)
     dr.text((145, y), "SMA 20", font=font(30), fill=MUTED, anchor="lm")
     dr.line([(330, y), (380, y)], fill=(120, 160, 230), width=6)
     dr.text((395, y), "SMA 50", font=font(30), fill=MUTED, anchor="lm")
     dr.text((W - 80, y), f"RSI {s['rsi']:.0f}", font=font(34), fill=WHITE, anchor="rm")
-    rtl_text(dr, (W - 80, 1590), "נר = יום · 3 חודשים · דוגמה לימודית", 30, MUTED)
+    rtl_text(dr, (W - 80, 1440), "נר = יום · 3 חודשים · דוגמה לימודית לדפוס, לא המלצה", 30, MUTED)
     return img
 
 
@@ -552,27 +699,108 @@ def shabbat_card(parasha=None, candles=None, havdalah=None):
 
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
-             "bullets": slide_bullets, "outro": slide_outro}
+             "bullets": slide_bullets, "outro": slide_outro, "news": slide_news, "analysts": slide_analysts,
+             "proscons": slide_proscons, "track": slide_track}
+
+
+def caption_chunks(words, max_words=3, max_chars=20):
+    """Group timed words into short caption lines: [([(word, start, end)], start, end)]."""
+    chunks, cur = [], []
+    for w in words:
+        if cur and (len(cur) >= max_words or sum(len(x[0]) + 1 for x in cur) + len(w[0]) > max_chars):
+            chunks.append(cur)
+            cur = []
+        cur.append(w)
+    if cur:
+        chunks.append(cur)
+    return chunks
+
+
+def caption_png(chunk, active, path):
+    """One caption frame: the line in a dark pill, the word being spoken in gold."""
+    img = Image.new("RGBA", (W, CAP_H), (0, 0, 0, 0))
+    dr = ImageDraw.Draw(img)
+    if chunk:
+        size = 60
+        f = font(size)
+        widths = [f.getlength(_visual(w[0])) for w in chunk]
+        gap = f.getlength(" ")
+        total = sum(widths) + gap * (len(chunk) - 1)
+        dr.rounded_rectangle([W / 2 - total / 2 - 36, 8, W / 2 + total / 2 + 36, CAP_H - 8], 30,
+                             fill=(0, 0, 0, 205), outline=GOLD_DARK + (255,), width=3)
+        x = W / 2 + total / 2  # right to left, word by word
+        for i, (w, wd) in enumerate(zip(chunk, widths)):
+            rtl_text(dr, (x, CAP_H / 2), w[0], size, ACCENT if i == active else WHITE, anchor="rm")
+            x -= wd + gap
+    img.save(path)
+
+
+def caption_track(words, dur, out_dir, prefix):
+    """Write caption frames and an ffmpeg concat list that shows each for its spoken time."""
+    out_dir = Path(out_dir)
+    blank = out_dir / f"{prefix}_cap_blank.png"
+    caption_png([], 0, blank)
+    entries, t, n = [], 0.0, 0
+    for chunk in caption_chunks(words):
+        for i, w in enumerate(chunk):
+            start = w[1]
+            end = chunk[i + 1][1] if i + 1 < len(chunk) else w[2]
+            if start > t:  # short pauses keep the last line up, longer ones clear it
+                if entries and start - t < 0.5:
+                    entries[-1] = (entries[-1][0], entries[-1][1] + start - t)
+                else:
+                    entries.append((blank, start - t))
+                t = start
+            path = out_dir / f"{prefix}_cap_{n}.png"
+            caption_png(chunk, i, path)
+            n += 1
+            end = max(end, t + 0.08)
+            entries.append((path, end - t))
+            t = end
+    entries.append((blank, max(dur - t, 0.1)))
+    lst = out_dir / f"{prefix}_caps.txt"
+    lst.write_text("".join(f"file '{p.name}'\nduration {d:.3f}\n" for p, d in entries) + f"file '{blank.name}'\n")
+    return lst
+
+
+ZOOM = 0.04  # each slide slowly pushes in by 4%, so no frame is static
 
 
 def render_video(d, script, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    segments = []
+    captions = os.environ.get("CAPTIONS", "1") != "0"
+    # narrate everything first: the progress bar needs the total length
+    parts = []
     for i, sl in enumerate(script["slides"]):
-        png, mp3, seg = (out_dir / f"slide_{i}.{ext}" for ext in ("png", "mp3", "mp4"))
+        png, mp3 = out_dir / f"slide_{i}.png", out_dir / f"slide_{i}.mp3"
         RENDERERS[sl["kind"]]({**d, **sl.get("head", {})}, sl).save(png)
-        dur = synthesize(sl["narration"], str(mp3)) + 0.4
+        dur, words = synthesize(sl["narration"], str(mp3))
+        parts.append((png, mp3, dur + 0.4, words))
+    total = sum(p[2] for p in parts)
+    segments, offset = [], 0.0
+    for i, (png, mp3, dur, words) in enumerate(parts):
+        seg = out_dir / f"slide_{i}.mp4"
         fade_out = max(dur - 0.25, 0)
+        inputs = ["-loop", "1", "-i", str(png), "-i", str(mp3),
+                  "-f", "lavfi", "-i", f"color=c=0xE8C478:s={W}x8:r=30"]
+        z = f"(1+{ZOOM}*t/{dur:.2f})"
+        graph = (f"[0:v]scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H},setsar=1[z];"
+                 f"[z][2:v]overlay=x='-W+W*({offset:.3f}+t)/{total:.3f}':y=70:eval=frame[p];")
+        last = "p"
+        if captions and words:
+            inputs += ["-f", "concat", "-safe", "0", "-i", str(caption_track(words, dur, out_dir, f"s{i}"))]
+            graph += f"[p][3:v]overlay=0:{CAP_Y}:eof_action=pass[c];"
+            last = "c"
+        graph += (f"[{last}]format=yuv420p,fade=t=in:st=0:d=0.25,fade=t=out:st={fade_out:.2f}:d=0.25[v];"
+                  f"[1:a]apad,aresample=44100[a]")
         subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(png), "-i", str(mp3),
-            "-filter_complex",
-            f"[0:v]scale={W}:{H},format=yuv420p,fade=t=in:st=0:d=0.25,fade=t=out:st={fade_out:.2f}:d=0.25[v];"
-            f"[1:a]apad,aresample=44100[a]",
+            "ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", graph,
             "-map", "[v]", "-map", "[a]", "-t", f"{dur:.2f}", "-r", "30",
             "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k", str(seg),
         ], check=True)
         segments.append(seg)
+        offset += dur
     listing = out_dir / "segments.txt"
     listing.write_text("".join(f"file '{s.name}'\n" for s in segments))
     final = out_dir / "reel.mp4"

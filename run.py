@@ -17,7 +17,7 @@ import json
 import os
 from pathlib import Path
 
-from stockreels import data, render, script
+from stockreels import data, render, script, series
 
 ROOT = Path(__file__).resolve().parent
 
@@ -131,6 +131,7 @@ def main():
         return
 
     today = dt.date.today().isoformat()
+    ep = series.next_episode(args.show) if args.show in series.SHOWS else None
     if args.show == "hot":
         if args.sample:
             stock = json.loads((ROOT / "sample_data.json").read_text())
@@ -138,7 +139,7 @@ def main():
             ticker = args.ticker or data.pick_hot_ticker()
             print(f"[data] today's pick: {ticker}")
             stock = data.fetch_stock(ticker)
-        sc, name = script.build_script(stock), stock["ticker"]
+        sc, name = script.build_script(stock, ep, series.kicker("hot", ep)), stock["ticker"]
     else:
         from stockreels import shows
         market = (json.loads((ROOT / "sample_data.json").read_text())["market"] if args.sample
@@ -150,8 +151,8 @@ def main():
                 from stockreels import market as mk
                 m = mk.fetch_premarket()
                 print(f"[data] setup: {(m['setup'] or {}).get('ticker')} {(m['setup'] or {}).get('kind')}")
-            sc, name = shows.premarket_script(m), "PRE"
-            stock = {"ticker": "PRE-MARKET", "market": market}
+            sc, name = shows.premarket_script(m, ep, series.kicker("premarket", ep)), "PRE"
+            stock = {"ticker": "PRE-MARKET", "market": market, "asof": data.asof()}
         elif args.show in ("open", "close"):
             if args.sample:
                 p = json.loads((ROOT / "sample_premarket.json").read_text())
@@ -164,7 +165,7 @@ def main():
                 print("[data] US market didn't trade today, nothing to post")
                 return
             sc, name = shows.session_script(m), args.show.upper()
-            stock = {"ticker": "LIVE" if args.show == "open" else "CLOSE", "market": market}
+            stock = {"ticker": "LIVE" if args.show == "open" else "CLOSE", "market": market, "asof": data.asof()}
             args.story_only = True  # quick Story snapshots, no Reel
         else:
             sc = shows.lesson_script()
@@ -180,7 +181,7 @@ def main():
     else:
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
-        sub = {"hot": f"{stock.get('ticker')} · מניה חמה", "premarket": f"{today} · לפני הפתיחה",
+        sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה"}[args.show]
         render.cover(stock, first["title"], sub).save(out_dir / "cover.png")
         sc["caption"] = polish_caption(sc["caption"])
@@ -200,6 +201,11 @@ def main():
                                                      cover_path=str(out_dir / "cover.png"))
         if args.show == "hot":
             data.save_to_history(stock["ticker"], today)
+        if ep:
+            series.mark_posted(args.show, ep)
+        if args.show == "premarket" and m.get("setup"):
+            from stockreels import market as mk
+            mk.log_setup(m["setup"], today)  # tomorrow's show reports how it played out
         print(f"[upload] published reel {media_id}")
 
     # STORY_MODE: "slides" (each slide as a Story image, default), "video", "both" or "none"

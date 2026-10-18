@@ -32,12 +32,24 @@ SETUP_TEXT = {
 }
 
 
-def premarket_script(m):
+TRACK_NARR = {"worked": "הגיע ליעד, פי 2 מהסיכון", "failed": "נכשל ונעצר בשפל שהוגדר מראש",
+              "open": "הופעל ועדיין פתוח", "waiting": "עוד לא הופעל", "expired": "לא הופעל ונסגר"}
+
+
+def premarket_script(m, episode=1, kicker=None):
     slides = [{
-        "kind": "intro", "title": "לקראת הפתיחה בוול סטריט",
-        "lines": [m["date"], "חוזים, סחורות, מניות זזות וסטאפ סווינג"],
-        "narration": "סקירה לקראת פתיחת המסחר בוול סטריט. מה קורה בחוזים, מי זזה בפרה-מרקט, וסטאפ סווינג לימודי.",
+        "kind": "intro", "title": "לקראת הפתיחה בוול סטריט", "head": {"kicker": kicker} if kicker else {},
+        "lines": [m["date"], "חוזים, מניות זזות ודפוס לימודי"],
+        "narration": "סקירה לקראת פתיחת המסחר בוול סטריט. מה קורה בחוזים, מי זזה בפרה-מרקט, ודפוס מסחר לימודי.",
     }]
+    t = m.get("track")
+    if t:
+        e, tl = t["latest"], t["tally"]
+        closed = tl["worked"] + tl["failed"]
+        slides.append({"kind": "track", "title": "מה קרה לדפוס הקודם", "track": t,
+                       "narration": f"קודם כל, מעקב. הדפוס הקודם על {e['ticker']} {TRACK_NARR[e['status']]}. "
+                                    + (f"עד היום {tl['worked']} דפוסים עבדו ו-{tl['failed']} נכשלו. " if closed else "")
+                                    + "אנחנו מראים גם את הכישלונות."})
     ov = {o["symbol"]: o for o in m["overview"]}
     if ov:
         parts = [f"{o['label'].replace('חוזה ', 'החוזה על ')} {_pct_words(o['pct'])}"
@@ -63,26 +75,27 @@ def premarket_script(m):
     if s:
         txt = SETUP_TEXT[s["kind"]]
         fmt = {"t": s["ticker"], "rsi": f"{s['rsi']:.0f}", "vr": f"{s['vol_ratio']:.1f}"}
+        head = {"ticker": s["ticker"], "price": s["price"]}
         slides += [
-            {"kind": "setup", "title": f"סטאפ סווינג: {txt['name']}", "setup": s, "head": {"ticker": s["ticker"], "price": s["price"]},
+            {"kind": "setup", "title": f"דפוס לימודי: {txt['name']}", "setup": s, "head": head,
              "narration": txt["narr"].format(**fmt)},
-            {"kind": "bullets", "title": "למה זה סטאפ", "bullets": [b.format(**fmt) for b in txt["why"]],
-             "head": {"ticker": s["ticker"], "price": s["price"]},
+            {"kind": "bullets", "title": "למה זה דפוס", "bullets": [b.format(**fmt) for b in txt["why"]], "head": head,
              "narration": "שלושה תנאים: מגמה עולה, " + ("חזרה לממוצע" if s["kind"] == "pullback" else "פריצה של השיא")
                           + ", ו" + ("מומנטום שהתקרר." if s["kind"] == "pullback" else "ווליום גבוה.")},
-            {"kind": "table", "title": "התוכנית (דוגמה לימודית)", "head": {"ticker": s["ticker"], "price": s["price"]},
-             "rows": [("טריגר כניסה מעל", _money(s["trigger"])), ("סטופ", _money(s["stop"])),
-                      ("יעד (פי 2 מהסיכון)", _money(s["target"])), ("סיכון עד הסטופ", f"{s['risk_pct']:.1f}%"),
-                      ("יחס סיכוי/סיכון", "1:2")],
-             "narration": f"ככה סוחר סווינג היה בונה תוכנית: כניסה רק אם המחיר עובר את {s['trigger']:.2f}, "
-                          f"סטופ ב-{s['stop']:.2f}, ויעד ב-{s['target']:.2f}, פי שניים מהסיכון. "
-                          "זו דוגמה לימודית לשיטה, לא המלצה."},
+            # the method in general terms only: no entry, stop or target prices (Investment Advice Law)
+            {"kind": "bullets", "title": "איך סוחרים בונים תוכנית", "head": head,
+             "bullets": ["מחכים שהמחיר יאשר את הדפוס", "מגדירים מראש איפה הרעיון מתבטל", "יעד של פי 2 לפחות מהסיכון"],
+             "narration": "ככה סוחרי סווינג עובדים עם דפוס כזה: מחכים לאישור של המחיר, מגדירים מראש איפה הרעיון מתבטל, "
+                          "בדרך כלל מתחת לשפל האחרון, ומחפשים יעד של לפחות פי 2 מהסיכון. זו דוגמה לימודית לשיטה, לא המלצה."},
         ]
-    slides.append({"kind": "outro", "title": "עקבו לסקירה כל יום לפני הפתיחה",
-                   "narration": "עקבו לסקירה כל יום לפני הפתיחה, ושיעור בסיס כל ערב. זה לא ייעוץ השקעות."})
-    caption = ("סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות" + (", דוחות השבוע" if m["earnings"] else "")
-               + (f" וסטאפ סווינג לימודי על {s['ticker']}" if s else "") + ".\n"
-               + "הסטאפ הוא דוגמה לימודית לשיטת מסחר. " + DISCLAIMER + "\n\n" + HASHTAGS + " #פרהמרקט #סווינג")
+    slides.append({"kind": "outro", "title": "מחר: מה קרה לדפוס של היום",
+                   "narration": f"זה היה פרק {episode} של לפני הפעמון. מחר נבדוק מה קרה לדפוס של היום, "
+                                "גם אם הוא נכשל. עקבו, ושלחו לחבר שסוחר. זה לא ייעוץ השקעות."})
+    caption = ("לפני הפעמון · פרק " + str(episode) + "\n"
+               + "סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות" + (", דוחות השבוע" if m["earnings"] else "")
+               + (f" ודפוס מסחר לימודי על {s['ticker']}" if s else "") + ".\n"
+               + ("כל דפוס נבדק למחרת בשקיפות מלאה, גם כשהוא נכשל.\n" if s else "")
+               + "הדפוס הוא דוגמה לימודית לשיטת מסחר. " + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
     return {"slides": slides, "caption": caption}
 
 
@@ -90,6 +103,7 @@ def lesson_script(day=None):
     n, title, points = lesson_for(day)
     nxt = LESSONS[n % len(LESSONS)][0]
     slides = [{"kind": "intro", "title": title, "lines": [f"שיעור {n} בסדרת הבסיס", "שוק ההון בדקה"],
+               "head": {"kicker": f"שוק ההון מאפס · שיעור {n}"},
                "narration": f"שיעור {n} בסדרת הבסיס: {title}"}]
     for p in points:
         heading, text = p[0], p[1]
