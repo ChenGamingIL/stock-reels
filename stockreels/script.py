@@ -186,8 +186,11 @@ def build_script(d, episode=1, kicker=None):
     if news:
         pubs = list(dict.fromkeys(x["publisher"] for x in news))
         slides.append({"kind": "news", "title": "מה מזיז את המניה", "news": news,
-                       "narration": f"מה מזיז את המניה? אלה הכותרות האחרונות, מ-{' ו-'.join(pubs[:2])}. "
-                                    "שימו לב לתאריך של כל כותרת."})
+                       "narration": (f"מה מזיז את המניה? לפי {news[0]['publisher']}: {news[0]['title_he'].rstrip('.')}. "
+                                     "ועל המסך עוד כותרות, כל אחת עם המקור והתאריך."
+                                     if news[0].get("title_he") else
+                                     f"מה מזיז את המניה? אלה הכותרות האחרונות, מ-{' ו-'.join(pubs[:2])}. "
+                                     "שימו לב לתאריך של כל כותרת.")})
     slides += [
         {"kind": "earnings", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
          "rows": earnings_rows(d), "narration": n["earnings"]},

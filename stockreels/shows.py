@@ -48,7 +48,7 @@ def premarket_script(m, episode=1, kicker=None):
     if t:
         e, tl = t["latest"], t["tally"]
         closed = tl["worked"] + tl["failed"]
-        slides.append({"kind": "track", "title": "מה קרה לדפוס הקודם", "track": t,
+        slides.append({"kind": "track", "title": "מה קרה לדפוס הקודם", "track": t, "head": {"not_advice": True},
                        "narration": f"קודם כל, מעקב. הדפוס הקודם על {e['ticker']} {TRACK_NARR[e['status']]}. "
                                     + (f"עד היום {tl['worked']} דפוסים עבדו ו-{tl['failed']} נכשלו. " if closed else "")
                                     + "אנחנו מראים גם את הכישלונות."})
@@ -76,10 +76,10 @@ def premarket_script(m, episode=1, kicker=None):
     if s:
         txt = SETUP_TEXT[s["kind"]]
         fmt = {"t": s["ticker"], "rsi": f"{s['rsi']:.0f}", "vr": f"{s['vol_ratio']:.1f}"}
-        head = {"ticker": s["ticker"], "price": s["price"]}
+        head = {"ticker": s["ticker"], "price": s["price"], "not_advice": True}
         slides += [
             {"kind": "setup", "title": f"דפוס לימודי: {txt['name']}", "setup": s, "head": head,
-             "narration": txt["narr"].format(**fmt)},
+             "narration": txt["narr"].format(**fmt) + " חשוב: זו דוגמה לימודית, לא ייעוץ פיננסי."},
             {"kind": "bullets", "title": "למה זה דפוס", "bullets": [b.format(**fmt) for b in txt["why"]], "head": head,
              "narration": "שלושה תנאים: מגמה עולה, " + ("חזרה לממוצע" if s["kind"] == "pullback" else "פריצה של השיא")
                           + ", ו" + ("מומנטום שהתקרר." if s["kind"] == "pullback" else "ווליום גבוה.")},
@@ -87,7 +87,8 @@ def premarket_script(m, episode=1, kicker=None):
             {"kind": "bullets", "title": "איך סוחרים בונים תוכנית", "head": head,
              "bullets": ["מחכים שהמחיר יאשר את הדפוס", "מגדירים מראש איפה הרעיון מתבטל", "יעד של פי 2 לפחות מהסיכון"],
              "narration": "ככה סוחרי סווינג עובדים עם דפוס כזה: מחכים לאישור של המחיר, מגדירים מראש איפה הרעיון מתבטל, "
-                          "בדרך כלל מתחת לשפל האחרון, ומחפשים יעד של לפחות פי 2 מהסיכון. זו דוגמה לימודית לשיטה, לא המלצה."},
+                          "בדרך כלל מתחת לשפל האחרון, ומחפשים יעד של לפחות פי 2 מהסיכון. "
+                          "זו דוגמה לימודית לשיטה. זה לא ייעוץ פיננסי ולא המלצה לקנות או למכור."},
         ]
     if s:
         outro = ("מחר: מה קרה לדפוס של היום", "מחר נבדוק מה קרה לדפוס של היום, גם אם הוא נכשל.")
@@ -99,7 +100,7 @@ def premarket_script(m, episode=1, kicker=None):
                + "סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות" + (", דוחות השבוע" if m["earnings"] else "")
                + (f" ודפוס מסחר לימודי על {s['ticker']}" if s else "") + ".\n"
                + ("כל דפוס נבדק למחרת בשקיפות מלאה, גם כשהוא נכשל.\n" if s else "")
-               + ("הדפוס הוא דוגמה לימודית לשיטת מסחר. " if s else "") + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
+               + ("הדפוס הוא דוגמה לימודית לשיטת מסחר, לא ייעוץ פיננסי. " if s else "") + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
     return {"slides": slides, "caption": caption}
 
 

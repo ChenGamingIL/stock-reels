@@ -134,7 +134,7 @@ def fetch_stock(ticker):
             "target_high": _num(info.get("targetHighPrice")),
             "target_low": _num(info.get("targetLowPrice")),
         },
-        "news": fetch_news(t),
+        "news": with_hebrew(fetch_news(t)),
         "asof": asof(),
         "earnings": earnings,
         "last_earnings": surprise,
@@ -195,6 +195,31 @@ def fetch_news(t, n=3, max_age_days=10):
         if len(out) == n:
             break
     return out or google_news(t.ticker, n, max_age_days)
+
+
+def translate_he(texts):
+    """English headlines to Hebrew with Google Translate's public endpoint; None for any that fail."""
+    import requests
+
+    out = []
+    for t in texts:
+        try:
+            r = requests.get("https://translate.googleapis.com/translate_a/single",
+                             params={"client": "gtx", "sl": "en", "tl": "iw", "dt": "t", "q": t}, timeout=15)
+            r.raise_for_status()
+            he = "".join(seg[0] for seg in r.json()[0] if seg and seg[0]).strip()
+            out.append(he or None)
+        except Exception as e:
+            print(f"[news] translate failed: {e.__class__.__name__}")
+            out.append(None)
+    return out
+
+
+def with_hebrew(news):
+    for item, he in zip(news, translate_he([x["title"] for x in news])):
+        if he:
+            item["title_he"] = he
+    return news
 
 
 def google_news(ticker, n=3, max_age_days=10):

@@ -124,6 +124,12 @@ def base(d, title):
         ch = d.get("change_5d_pct")
         if ch is not None:
             rtl_text(dr, (W - 60, 215), f"{ch:+.1f}% השבוע", 36, GREEN if ch >= 0 else RED)
+    if d.get("not_advice"):  # pattern slides say it outright, above the caption band
+        msg = "דוגמה לימודית · לא ייעוץ פיננסי"
+        tw = font(36).getlength(_visual(msg)) + 60
+        dr.rounded_rectangle([(W - tw) / 2, CONTENT_BOTTOM - 66, (W + tw) / 2, CONTENT_BOTTOM - 6], 30,
+                             fill=(40, 14, 10), outline=RED, width=3)
+        rtl_text(dr, (W / 2, CONTENT_BOTTOM - 36), msg, 36, WHITE, anchor="mm")
     ty = 330
     if d.get("kicker"):  # series name and episode, on the first slide
         f = font(36)
@@ -199,16 +205,26 @@ def slide_news(d, sl):
     img, dr = base(d, sl["title"])
     y = 640
     for n in sl["news"][:3]:
-        lines = wrap(n["title"], 44, W - 200)[:3]
-        h = 90 + len(lines) * 58
+        he = n.get("title_he")
+        lines = wrap(he or n["title"], 44, W - 200)[:3]
+        orig = wrap(n["title"], 26, W - 200)[:2] if he else []
+        h = 90 + len(lines) * 58 + len(orig) * 34 + (10 if orig else 0)
         if y + h > CONTENT_BOTTOM:
             break
         dr.rounded_rectangle([60, y, W - 60, y + h], 24, fill=(22, 18, 10), outline=GOLD_DARK, width=2)
         dr.rectangle([W - 70, y + 20, W - 64, y + h - 20], fill=ACCENT)
         dr.text((100, y + 26), n["publisher"], font=font(32), fill=ACCENT)
         dr.text((W - 100, y + 26), n["date"], font=font(32), fill=MUTED, anchor="ra")
-        for j, line in enumerate(lines):
-            dr.text((100, y + 84 + j * 58), line, font=font(44), fill=WHITE)
+        yy = y + 84
+        for line in lines:
+            if he:  # Hebrew translation large, the original headline under it as the source
+                rtl_text(dr, (W - 100, yy), line, 44, WHITE)
+            else:
+                dr.text((100, yy), line, font=font(44), fill=WHITE)
+            yy += 58
+        for line in orig:
+            dr.text((100, yy + 6), line, font=font(26), fill=MUTED)
+            yy += 34
         y += h + 30
     return img
 
@@ -582,7 +598,6 @@ def slide_setup(d, sl):
     dr.line([(330, y), (380, y)], fill=(120, 160, 230), width=6)
     dr.text((395, y), "SMA 50", font=font(30), fill=MUTED, anchor="lm")
     dr.text((W - 80, y), f"RSI {s['rsi']:.0f}", font=font(34), fill=WHITE, anchor="rm")
-    rtl_text(dr, (W - 80, 1440), "נר = יום · 3 חודשים · דוגמה לימודית לדפוס, לא המלצה", 30, MUTED)
     return img
 
 
