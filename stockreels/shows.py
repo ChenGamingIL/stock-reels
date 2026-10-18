@@ -2,7 +2,7 @@
 
 All numbers come from the data; narration is built from templates so nothing is invented.
 """
-from .lessons import LESSONS, lesson_for
+from .lessons import LESSONS, lesson_for, lesson_number
 from .script import DISCLAIMER
 
 HASHTAGS = "#שוקההון #מניות #וולסטריט #בורסה #השקעות #מסחר #stocks #trading"
@@ -104,8 +104,9 @@ def premarket_script(m, episode=1, kicker=None):
     return {"slides": slides, "caption": caption}
 
 
-def lesson_script(day=None):
-    n, title, points = lesson_for(day)
+def lesson_script(day=None, episode=None):
+    # by the posted-episode counter, so a lesson skipped for Shabbat isn't lost from the cycle
+    n, title, points = lesson_number(episode) if episode else lesson_for(day)
     nxt = LESSONS[n % len(LESSONS)][0]
     slides = [{"kind": "intro", "title": title, "lines": [f"שיעור {n} בסדרת הבסיס", "שוק ההון בדקה"],
                "head": {"kicker": f"שוק ההון מאפס · שיעור {n}"},

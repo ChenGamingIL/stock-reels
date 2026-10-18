@@ -3,7 +3,8 @@ name: Daily stock reel
 on:
   schedule:
     # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
-    # two crons and the "Israel time" step lets only the one matching today's offset through:
+    # two crons and the "Israel time" step lets only the one matching today's offset through
+    # (market shows by New York's offset, so they keep their place around the bell):
     # 08:00 hot stock, 12:30 "did you know" episode, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
     # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri), Friday 14:00 Shabbat Shalom Story.
     # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
@@ -67,23 +68,30 @@ jobs:
           fi
           # GitHub often starts scheduled runs hours late, so go by which cron fired, not the clock
           show=$(SCHEDULE="${{ github.event.schedule }}" python3 - <<'PY'
-          import datetime as dt, os
+          import datetime as dt, os, sys
           from zoneinfo import ZoneInfo
           m, h = (int(x) for x in os.environ["SCHEDULE"].split()[:2])
-          now = dt.datetime.now(ZoneInfo("Asia/Jerusalem"))
-          off = int(now.utcoffset().total_seconds() // 3600)
-          slot = ((h + off) % 24, m)  # Israel time this cron stands for today
-          # show, and how late it may still go out (hours): market shows lose their point after the bell
-          shows = {(8, 0): ("hot", 6), (12, 30): ("didyouknow", 4), (15, 30): ("premarket", 0.9), (16, 45): ("open", 2),
-                   (20, 0): ("lesson", 3), (23, 15): ("close", 3), (14, 0): ("shabbat", 1.5)}
-          show, grace = shows.get(slot, ("", 0))
-          due = now.replace(hour=slot[0], minute=slot[1], second=0, microsecond=0)
-          if due > now + dt.timedelta(hours=1):
-              due -= dt.timedelta(days=1)  # the 23:15 slot, picked up after midnight
-          late = (now - due).total_seconds() / 3600
-          if show and late > grace:
-              print(f"::warning::{show} started {late:.1f}h late, skipping", file=__import__("sys").stderr)
-              show = ""
+          utc = dt.datetime.now(dt.timezone.utc)
+          # (clock, slot, show, hours it may still go out late). Market shows follow New York time,
+          # so the pre-market review stays an hour before the bell when only one country changed clocks.
+          slots = [("Asia/Jerusalem", (8, 0), "hot", 6), ("Asia/Jerusalem", (12, 30), "didyouknow", 4),
+                   ("Asia/Jerusalem", (14, 0), "shabbat", 1.5), ("Asia/Jerusalem", (20, 0), "lesson", 3),
+                   ("America/New_York", (8, 30), "premarket", 0.9), ("America/New_York", (9, 45), "open", 2),
+                   ("America/New_York", (16, 15), "close", 3)]
+          show = ""
+          for tz, slot, name, grace in slots:
+              now = utc.astimezone(ZoneInfo(tz))
+              off = int(now.utcoffset().total_seconds() // 3600)
+              if ((h + off) % 24, m) != slot:
+                  continue  # the other cron of this slot's pair, for the other DST state
+              due = now.replace(hour=slot[0], minute=slot[1], second=0, microsecond=0)
+              if due > now + dt.timedelta(hours=1):
+                  due -= dt.timedelta(days=1)  # picked up after midnight
+              late = (now - due).total_seconds() / 3600
+              if late > grace:
+                  print(f"::warning::{name} started {late:.1f}h late, skipping", file=sys.stderr)
+              else:
+                  show = name
           print(show)
           PY
           )

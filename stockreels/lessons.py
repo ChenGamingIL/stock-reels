@@ -100,6 +100,12 @@ LESSONS = [
 ]
 
 
+def lesson_number(n):
+    """(number, title, points) for the n-th lesson posted; the series loops when it runs out."""
+    i = (n - 1) % len(LESSONS)
+    return i + 1, *LESSONS[i]
+
+
 def lesson_for(day=None):
     """(number, title, points) for the given date; the series loops when it runs out."""
     day = day or dt.date.today()

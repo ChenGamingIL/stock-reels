@@ -173,7 +173,7 @@ def main():
             name = f"DYK{ep}"
             stock = {"ticker": "הידעת?", "market": market}
         else:
-            sc = shows.lesson_script()
+            sc = shows.lesson_script(episode=ep)
             name = f"LESSON{sc['number']}"
             stock = {"ticker": f"#{sc['number']}", "market": market}
 
