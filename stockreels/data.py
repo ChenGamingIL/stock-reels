@@ -107,7 +107,7 @@ def fetch_stock(ticker):
 
     return {
         "ticker": ticker,
-        "name": info.get("shortName") or ticker,
+        "name": short_name(info.get("shortName") or ticker),
         "sector": info.get("sector"),
         "currency": info.get("currency", "USD"),
         "price": _num(info.get("currentPrice") or (hist.iloc[-1] if len(hist) else None)),
@@ -146,6 +146,14 @@ def fetch_stock(ticker):
     }
 
 
+def short_name(name):
+    """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration and titles."""
+    import re
+
+    return re.sub(r"[,\s]+(Inc\.?|Corporation|Corp\.?|Holdings?|Ltd\.?|plc|N\.V\.|S\.A\.|Co\.|Company|Class [A-C])$", "",
+                  name.strip(), flags=re.I).strip() or name
+
+
 def asof():
     """Data timestamp shown on every slide, Israel time."""
     import datetime as dt
@@ -165,6 +173,9 @@ def fetch_news(t, n=3, max_age_days=10):
         print(f"[data] news unavailable: {e.__class__.__name__}")
         return out
     now = dt.datetime.now(dt.timezone.utc)
+    if items:
+        c0 = items[0].get("content") or items[0]
+        print(f"[news] {len(items)} items, first: {sorted(c0)[:14]} type={c0.get('contentType')} date={c0.get('pubDate')}")
     for it in items:
         c = it.get("content") or it
         title = c.get("title")

@@ -37,10 +37,12 @@ TRACK_NARR = {"worked": "הגיע ליעד, פי 2 מהסיכון", "failed": "�
 
 
 def premarket_script(m, episode=1, kicker=None):
+    s = m.get("setup")
     slides = [{
         "kind": "intro", "title": "לקראת הפתיחה בוול סטריט", "head": {"kicker": kicker} if kicker else {},
-        "lines": [m["date"], "חוזים, מניות זזות ודפוס לימודי"],
-        "narration": "סקירה לקראת פתיחת המסחר בוול סטריט. מה קורה בחוזים, מי זזה בפרה-מרקט, ודפוס מסחר לימודי.",
+        "lines": [m["date"], "חוזים, מניות זזות" + (" ודפוס לימודי" if s else " ודוחות")],
+        "narration": "סקירה לקראת פתיחת המסחר בוול סטריט. מה קורה בחוזים, מי זזה בפרה-מרקט"
+                     + (", ודפוס מסחר לימודי." if s else ", ומי מדווחת השבוע."),
     }]
     t = m.get("track")
     if t:
@@ -71,7 +73,6 @@ def premarket_script(m, episode=1, kicker=None):
     if m["earnings"]:
         slides.append({"kind": "bullets", "title": "דוחות השבוע", "bullets": [f"{t} · {d}" for t, d in m["earnings"]],
                        "narration": "החברות הגדולות שמפרסמות דוחות השבוע: " + ", ".join(t for t, _ in m["earnings"]) + "."})
-    s = m.get("setup")
     if s:
         txt = SETUP_TEXT[s["kind"]]
         fmt = {"t": s["ticker"], "rsi": f"{s['rsi']:.0f}", "vr": f"{s['vol_ratio']:.1f}"}
@@ -88,14 +89,17 @@ def premarket_script(m, episode=1, kicker=None):
              "narration": "ככה סוחרי סווינג עובדים עם דפוס כזה: מחכים לאישור של המחיר, מגדירים מראש איפה הרעיון מתבטל, "
                           "בדרך כלל מתחת לשפל האחרון, ומחפשים יעד של לפחות פי 2 מהסיכון. זו דוגמה לימודית לשיטה, לא המלצה."},
         ]
-    slides.append({"kind": "outro", "title": "מחר: מה קרה לדפוס של היום",
-                   "narration": f"זה היה פרק {episode} של לפני הפעמון. מחר נבדוק מה קרה לדפוס של היום, "
-                                "גם אם הוא נכשל. עקבו, ושלחו לחבר שסוחר. זה לא ייעוץ השקעות."})
+    if s:
+        outro = ("מחר: מה קרה לדפוס של היום", "מחר נבדוק מה קרה לדפוס של היום, גם אם הוא נכשל.")
+    else:  # no textbook pattern today: say so rather than force one
+        outro = ("היום אין דפוס שעומד בתנאים", "היום אף מניה לא עמדה בכל התנאים, ולכן אין דפוס. גם זה חלק מהשיטה.")
+    slides.append({"kind": "outro", "title": outro[0],
+                   "narration": f"{outro[1]} זה היה פרק {episode} של לפני הפעמון. עקבו, ושלחו לחבר שסוחר. זה לא ייעוץ השקעות."})
     caption = ("לפני הפעמון · פרק " + str(episode) + "\n"
                + "סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות" + (", דוחות השבוע" if m["earnings"] else "")
                + (f" ודפוס מסחר לימודי על {s['ticker']}" if s else "") + ".\n"
                + ("כל דפוס נבדק למחרת בשקיפות מלאה, גם כשהוא נכשל.\n" if s else "")
-               + "הדפוס הוא דוגמה לימודית לשיטת מסחר. " + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
+               + ("הדפוס הוא דוגמה לימודית לשיטת מסחר. " if s else "") + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
     return {"slides": slides, "caption": caption}
 
 
