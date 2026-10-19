@@ -1,0 +1,55 @@
+name: Posting clock
+
+# GitHub's cron starts runs late or drops them when it is busy, so the shows no longer depend on it.
+# This run sleeps until each slot and dispatches the show itself (stockreels/clock.py), then hands
+# over to a fresh run before the 6-hour job limit. The cron below only restarts the chain if it ever breaks.
+on:
+  schedule:
+    - cron: "7,37 * * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+  actions: write
+
+jobs:
+  clock:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    steps:
+      - name: Only one clock at a time
+        id: solo
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          sleep 45  # let the run that started this one finish handing over
+          older=$(gh api "repos/${{ github.repository }}/actions/workflows/clock.yml/runs?status=in_progress&per_page=20" \
+            --jq "[.workflow_runs[] | select(.id < ${{ github.run_id }})] | length")
+          echo "older clocks running: $older"
+          [ "$older" = "0" ] && echo "go=true" >> "$GITHUB_OUTPUT" || echo "go=false" >> "$GITHUB_OUTPUT"
+      - uses: actions/checkout@v4
+        if: steps.solo.outputs.go == 'true'
+      - uses: actions/setup-python@v5
+        if: steps.solo.outputs.go == 'true'
+        with:
+          python-version: "3.12"
+      - name: Wait for each slot and start it
+        if: steps.solo.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          pip install -q requests
+          git config user.name "stock-reels-bot"
+          git config user.email "actions@users.noreply.github.com"
+          python -m stockreels.clock --plan
+          python -m stockreels.clock
+      - name: Hand over to the next clock
+        if: always() && steps.solo.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          for i in 1 2 3; do
+            gh api -X POST "repos/${{ github.repository }}/actions/workflows/clock.yml/dispatches" -f ref=main && exit 0
+            sleep 15
+          done
+          exit 1
