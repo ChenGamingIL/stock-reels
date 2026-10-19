@@ -126,24 +126,37 @@ def publishing_quota():
     return r.get("quota_usage", 0), (r.get("config") or {}).get("quota_total", 100)
 
 
+def _within_quota(paths):
+    """Leave room under the 24h publishing limit for the scheduled Reels."""
+    try:
+        used, total = publishing_quota()
+        print(f"[upload] publishing quota {used}/{total}")
+        room = total - used - 3
+        if room < len(paths):
+            print(f"[upload] near the daily limit, posting {max(room, 0)} of {len(paths)} Stories")
+            return list(paths)[:max(room, 0)]
+    except Exception as e:
+        print(f"[upload] quota check failed: {e}")
+    return list(paths)
+
+
+def publish_story_clips(mp4_paths, tag):
+    """Post each animated Story clip, in order."""
+    mp4_paths = _within_quota(mp4_paths)
+    if not mp4_paths:
+        return []
+    release_id = _create_release(tag)
+    return [publish_story(video_url=_upload_asset(release_id, str(p), f"story_{i}.mp4", "video/mp4"))
+            for i, p in enumerate(mp4_paths)]
+
+
 def publish_story_slides(png_paths, tag):
     """Post each slide as its own Story image, in order (Instagram needs JPEG)."""
     from PIL import Image
 
+    png_paths = _within_quota(png_paths)
     if not png_paths:
         return []
-    try:  # leave room under the 24h limit for the scheduled Reels
-        used, total = publishing_quota()
-        print(f"[upload] publishing quota {used}/{total}")
-        room = total - used - 3
-        if room < len(png_paths):
-            print(f"[upload] near the daily limit, posting {max(room, 0)} of {len(png_paths)} slides")
-            png_paths = list(png_paths)[:max(room, 0)]
-        if not png_paths:
-            return []
-    except Exception as e:
-        print(f"[upload] quota check failed: {e}")
-
     release_id = _create_release(tag)
     ids = []
     for i, png in enumerate(png_paths):

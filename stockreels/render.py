@@ -7,7 +7,8 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, features
 
 from .script import DISCLAIMER
-from .tts import synthesize
+from . import motion
+from .tts import LOUDNESS, synthesize
 
 W, H = 1080, 1920
 # burned-in captions sit in this band on Reels, so slide content ends above it
@@ -177,6 +178,37 @@ def ticker_tape(dr, d):
             break
 
 
+def tape_strip(d):
+    """The ticker items in one long strip, repeated so a window of any offset is filled: (strip, loop length)."""
+    items = d.get("market") or []
+    if not items:
+        return None, 0
+    f = font(28)
+    def item_w(name, pct):
+        return f.getlength(name) + 12 + 26 + f.getlength(f"{abs(pct):.2f}%") + 60
+    loop = int(sum(item_w(n, p) for n, _, p in items))
+    reps = -(-(W + loop) // loop) + 1
+    img = Image.new("RGB", (loop * reps, 72), (14, 12, 8))
+    dr = ImageDraw.Draw(img)
+    x = 30
+    for _ in range(reps):
+        for name, _, pct in items:
+            color = GREEN if pct >= 0 else RED
+            dr.text((x, 36), name, font=f, fill=MUTED, anchor="lm")
+            x += f.getlength(name) + 12
+            arrow(dr, x, 36, pct >= 0, color, 9)
+            x += 26
+            txt = f"{abs(pct):.2f}%"
+            dr.text((x, 36), txt, font=f, fill=color, anchor="lm")
+            x += f.getlength(txt) + 60
+    return img, loop
+
+
+def chrome(d):
+    """The frame every slide shares: background, header, footer, no title or content."""
+    return base({**d, "kicker": None}, "")[0]
+
+
 def slide_hook(d, sl):
     """First frame carries the number: the week's move, big, with a sparkline under it."""
     img, dr = base(d, sl["title"])
@@ -185,6 +217,7 @@ def slide_hook(d, sl):
     if ch is not None:
         color = GREEN if ch >= 0 else RED
         dr.text((W // 2, y), f"{ch:+.1f}%", font=font(220), fill=color, anchor="ma")
+        img.info["count"] = {"xy": (W // 2, y), "text": f"{ch:+.1f}%", "size": 220, "color": color}
         rtl_text(dr, (W // 2, y + 260), "בשבוע האחרון", 48, MUTED, anchor="ma")
         y += 360
     pts = (d.get("history") or [])[-30:]
@@ -209,6 +242,7 @@ def slide_fact(d, sl):
     while font(size).getlength(big) > W - 160 and size > 120:
         size -= 10
     dr.text((W // 2, 760), big, font=font(size), fill=color, anchor="ma")
+    img.info["count"] = {"xy": (W // 2, 760), "text": big, "size": size, "color": color}
     y = 760 + size + 60
     for line in wrap(sl["label"], 48, W - 200)[:2]:
         rtl_text(dr, (W // 2, y), line, 48, MUTED, anchor="ma")
@@ -344,6 +378,7 @@ def slide_track(d, sl):
 
 def slide_chart(d, sl):
     img, dr = base(d, sl["title"])
+    img.info["wipe"] = "ltr"  # time runs left to right, so the chart draws in that way
     candles = d.get("candles") or []
     if len(candles) < 2:
         return slide_line_chart(d, sl, img, dr)
@@ -458,6 +493,7 @@ def fmt_big(v):
 def slide_earnings(d, sl):
     """Quarterly report card: last EPS vs estimate, then revenue bars per quarter."""
     img, dr = base(d, sl["title"])
+    img.info["wipe"] = "ltr"  # time runs left to right, so the chart draws in that way
     y = 660
     le = d.get("last_earnings") or {}
     if le.get("eps_reported") is not None and le.get("eps_estimate") is not None:
@@ -602,6 +638,7 @@ def cover(d, title, sub=""):
 def slide_setup(d, sl):
     """The pattern on the chart, for teaching: structure levels only, no entry, stop or target prices."""
     img, dr = base(d, sl["title"])
+    img.info["wipe"] = "ltr"  # time runs left to right, so the chart draws in that way
     s = sl["setup"]
     levels = [(s["recent_low"], "השפל האחרון", RED)] if s.get("recent_low") else []
     if s["kind"] == "breakout":
@@ -795,7 +832,33 @@ def caption_track(words, dur, out_dir, prefix):
     return lst
 
 
-ZOOM = 0.04  # each slide slowly pushes in by 4%, so no frame is static
+def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out=True):
+    """Stream the slide's frames into ffmpeg with its narration, progress bar and captions."""
+    inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-framerate", str(motion.FPS), "-i", "-"]
+    inputs += ["-i", str(mp3)] if mp3 else ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
+    graph, last = "", "0:v"
+    if total:
+        inputs += ["-f", "lavfi", "-i", f"color=c=0xE8C478:s={W}x8:r=30"]
+        graph += f"[0:v][2:v]overlay=x='-W+W*({offset:.3f}+t)/{total:.3f}':y=70:eval=frame:shortest=1[p];"
+        last = "p"
+    if caps:
+        inputs += ["-f", "concat", "-safe", "0", "-i", str(caps)]
+        graph += f"[{last}][3:v]overlay=0:{CAP_Y}:eof_action=pass[c];"
+        last = "c"
+    graph += f"[{last}]format=yuv420p[v];[1:a]apad,aresample=44100[a]"
+    proc = subprocess.Popen([
+        "ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", graph,
+        "-map", "[v]", "-map", "[a]", "-t", f"{dur:.2f}", "-r", str(motion.FPS),
+        "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", str(seg),
+    ], stdin=subprocess.PIPE)
+    try:
+        for raw in motion.frames(pieces, dur, tape, t0, fade_out):
+            proc.stdin.write(raw)
+    except BrokenPipeError:
+        pass
+    proc.stdin.close()
+    if proc.wait() != 0:
+        raise RuntimeError(f"ffmpeg failed on {seg}")
 
 
 def render_video(d, script, out_dir):
@@ -805,37 +868,49 @@ def render_video(d, script, out_dir):
     # narrate everything first: the progress bar needs the total length
     parts = []
     for i, sl in enumerate(script["slides"]):
+        dd = {**d, **sl.get("head", {})}
         png, mp3 = out_dir / f"slide_{i}.png", out_dir / f"slide_{i}.mp3"
-        RENDERERS[sl["kind"]]({**d, **sl.get("head", {})}, sl).save(png)
+        full = RENDERERS[sl["kind"]](dd, sl)
+        full.save(png)
         dur, words = synthesize(sl["narration"], str(mp3))
-        parts.append((png, mp3, dur + 0.4, words))
+        parts.append((motion.Pieces(full, chrome(dd)), mp3, dur + 0.45, words))
     total = sum(p[2] for p in parts)
+    tape = motion.Tape(*tape_strip(d))
     segments, offset = [], 0.0
-    for i, (png, mp3, dur, words) in enumerate(parts):
+    for i, (pieces, mp3, dur, words) in enumerate(parts):
         seg = out_dir / f"slide_{i}.mp4"
-        fade_out = max(dur - 0.25, 0)
-        inputs = ["-loop", "1", "-i", str(png), "-i", str(mp3),
-                  "-f", "lavfi", "-i", f"color=c=0xE8C478:s={W}x8:r=30"]
-        z = f"(1+{ZOOM}*t/{dur:.2f})"
-        graph = (f"[0:v]scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H},setsar=1[z];"
-                 f"[z][2:v]overlay=x='-W+W*({offset:.3f}+t)/{total:.3f}':y=70:eval=frame[p];")
-        last = "p"
-        if captions and words:
-            inputs += ["-f", "concat", "-safe", "0", "-i", str(caption_track(words, dur, out_dir, f"s{i}"))]
-            graph += f"[p][3:v]overlay=0:{CAP_Y}:eof_action=pass[c];"
-            last = "c"
-        graph += (f"[{last}]format=yuv420p,fade=t=in:st=0:d=0.25,fade=t=out:st={fade_out:.2f}:d=0.25[v];"
-                  f"[1:a]apad,aresample=44100[a]")
-        subprocess.run([
-            "ffmpeg", "-y", "-loglevel", "error", *inputs, "-filter_complex", graph,
-            "-map", "[v]", "-map", "[a]", "-t", f"{dur:.2f}", "-r", "30",
-            "-c:v", "libx264", "-preset", "veryfast", "-crf", "20", "-c:a", "aac", "-b:a", "128k", str(seg),
-        ], check=True)
+        caps = caption_track(words, dur, out_dir, f"s{i}") if captions and words else None
+        _encode_slide(pieces, dur, mp3, caps, tape, offset, total, offset, seg, fade_out=i < len(parts) - 1)
         segments.append(seg)
         offset += dur
     listing = out_dir / "segments.txt"
     listing.write_text("".join(f"file '{s.name}'\n" for s in segments))
     final = out_dir / "reel.mp4"
+    # one loudness pass over the whole Reel so every slide sits at the same level
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-                    "-c", "copy", "-movflags", "+faststart", str(final)], check=True)
+                    "-c:v", "copy", "-af", LOUDNESS, "-ar", "44100", "-c:a", "aac", "-b:a", "160k",
+                    "-movflags", "+faststart", str(final)], check=True)
     return final
+
+
+def story_clip(d, sl, out, seconds=7.0):
+    """A Story as a short animated clip: the slide builds in over the shared frame and holds."""
+    dd = {**d, **sl.get("head", {})}
+    full = RENDERERS[sl["kind"]](dd, sl)
+    _encode_slide(motion.Pieces(full, chrome(dd)), seconds, None, None, motion.Tape(*tape_strip(dd)),
+                  0.0, 0, 0, out, fade_out=False)
+    return out
+
+
+def still_clip(img, out, seconds=6.0):
+    """A finished image (like the Reel cover) as a Story clip: a slow push-in."""
+    src = Path(out).with_suffix(".png")
+    img.save(src)
+    z = f"(1+0.05*t/{seconds:.2f})"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-loop", "1", "-i", str(src),
+                    "-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo", "-filter_complex",
+                    f"[0:v]scale=w='trunc({W}*{z}/2)*2':h='trunc({H}*{z}/2)*2':eval=frame,crop={W}:{H},"
+                    f"setsar=1,fade=t=in:st=0:d=0.4,format=yuv420p[v]",
+                    "-map", "[v]", "-map", "1:a", "-t", f"{seconds:.2f}", "-r", "30",
+                    "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", str(out)], check=True)
+    return out

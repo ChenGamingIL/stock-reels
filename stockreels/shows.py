@@ -3,7 +3,7 @@
 All numbers come from the data; narration is built from templates so nothing is invented.
 """
 from .lessons import LESSONS, lesson_for, lesson_number
-from .script import DISCLAIMER
+from .script import DISCLAIMER, speak
 
 HASHTAGS = "#שוקההון #מניות #וולסטריט #בורסה #השקעות #מסחר #stocks #trading"
 
@@ -140,3 +140,58 @@ def session_script(m):
     slides.append({"kind": "outro", "title": "נתראה בסיכום הערב" if is_open else "מחר 08:00: המניה החמה הבאה",
                    "narration": ""})
     return {"slides": slides, "caption": ""}
+
+
+def _move(p):
+    return f"{'עלה' if p >= 0 else 'ירד'} {abs(p):.1f} אחוז"
+
+
+def close_script(m, episode=1, kicker=None):
+    """Evening recap Reel, right after the bell: how the market closed, which sectors led, why the
+    biggest movers moved and the day's top headlines, each headline with its source."""
+    tiles = {t["symbol"]: t for t in m["tiles"]}
+    spx, ndx, dji = tiles.get("^GSPC"), tiles.get("^IXIC"), tiles.get("^DJI")
+    vix, tnx = tiles.get("^VIX"), tiles.get("^TNX")
+    first = [f"ה-S&P 500 {_move(spx['pct'])}"]
+    if ndx:
+        first.append(f"הנאסד\"ק {_move(ndx['pct'])}")
+    if dji:
+        first.append(f"והדאו ג'ונס {_move(dji['pct'])}")
+    slides = [{"kind": "fact", "title": "ככה נסגרה וול סטריט היום", "big": f"{spx['pct']:+.2f}%",
+               "label": "\u2066S&P 500\u2069 בסגירה", "head": {"kicker": kicker} if kicker else {},
+               "narration": f"סיכום היום בוול סטריט. {', '.join(first)}."}]
+    extra = []
+    if vix:
+        extra.append(f"מדד הפחד VIX {'עלה' if vix['pct'] >= 0 else 'ירד'} ל-{vix['price']:.1f}")
+    if tnx:
+        extra.append(f"והתשואה על אג\"ח ל-10 שנים עומדת על {tnx['price']:.2f} אחוז")
+    slides.append({"kind": "tiles", "title": "המדדים בסגירה", "tiles": m["tiles"],
+                   "narration": (", ".join(extra) + ".") if extra else "ככה נראו המדדים בסגירה."})
+    if m.get("sectors"):
+        top, bottom = m["sectors"][0], m["sectors"][-1]
+        slides.append({"kind": "bars", "title": "הסקטורים היום", "bars": m["sectors"],
+                       "narration": f"הסקטור החזק היום: {top[0]}, {_move(top[1])}. "
+                                    f"החלש ביותר: {bottom[0]}, {_move(bottom[1])}."})
+    for w in m.get("why", []):
+        n0 = w["news"][0]
+        said = n0.get("title_he") or ""
+        verb = ("קפצה" if w["pct"] >= 3 else "עלתה") if w["pct"] >= 0 else ("צנחה" if w["pct"] <= -3 else "ירדה")
+        slides.append({"kind": "news", "title": f"למה {w['ticker']} {verb} היום?",
+                       "news": w["news"], "head": {"ticker": w["ticker"]},
+                       "narration": f"{w['ticker']} {verb} היום {abs(w['pct']):.1f} אחוז."
+                                    + (f" לפי {n0['publisher']}: {said}" if said else "")})
+    if m.get("headlines"):
+        h0 = m["headlines"][0]
+        slides.append({"kind": "news", "title": "הכותרות של היום", "news": m["headlines"],
+                       "narration": "ומה עוד בכותרות." + (f" {h0['publisher']}: {h0['title_he']}"
+                                                           if h0.get("title_he") else "")})
+    slides.append({"kind": "outro", "title": "מחר 08:00: המניה החמה",
+                   "narration": "זה היה סיכום היום. מחר בשמונה בבוקר: המניה החמה. "
+                                "עקבו כדי לא לפספס, ושלחו למי שעוקב אחרי השוק."})
+    for sl in slides:
+        sl["narration"] = speak(sl["narration"])
+    caption = (f"סיכום היום בוול סטריט · S&P 500 {spx['pct']:+.2f}%\n"
+               + (f"הבולטות: {', '.join(w['ticker'] for w in m.get('why', []))}\n" if m.get("why") else "")
+               + f"סיכום היום · פרק {episode} · כל ערב אחרי הסגירה\n{DISCLAIMER}\n\n"
+               "#וולסטריט #סיכוםהיום #שוקההון #מניות #השקעות")
+    return {"slides": slides, "caption": caption}

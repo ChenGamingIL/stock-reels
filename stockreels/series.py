@@ -9,6 +9,7 @@ SHOWS = {
     "premarket": "לפני הפעמון",
     "lesson": "שוק ההון מאפס",
     "didyouknow": "הידעת?",
+    "close": "סיכום היום",
 }
 
 

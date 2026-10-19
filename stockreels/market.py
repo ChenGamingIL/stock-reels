@@ -279,3 +279,19 @@ def fetch_session(kind):
         data["sectors"] = sorted(([n, round(ch[s][1], 2)] for n, s in SECTORS if s in ch),
                                  key=lambda x: -x[1])
     return data
+
+
+def session_news(m):
+    """The day's news for the evening recap: why the biggest movers moved, and the top headlines."""
+    from .data import google_news, market_headlines, with_hebrew
+
+    m["why"] = []
+    for side in ("gainers", "losers"):
+        if m["movers"][side]:
+            t, pct = m["movers"][side][0]
+            news = with_hebrew(google_news(t, n=2, max_age_days=2))
+            if news:
+                m["why"].append({"ticker": t, "pct": pct, "news": news})
+    m["headlines"] = market_headlines()
+    print(f"[news] recap: {[w['ticker'] for w in m['why']]} + {len(m['headlines'])} headlines")
+    return m

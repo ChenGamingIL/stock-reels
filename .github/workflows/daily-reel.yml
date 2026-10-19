@@ -20,6 +20,10 @@ on:
         description: "Build only, don't upload"
         type: boolean
         default: false
+      preview:
+        description: "With dry run: attach the video and Story clips to a release to watch"
+        type: boolean
+        default: false
       story_only:
         description: "Post only the Story slides (no Reel)"
         type: boolean
@@ -110,6 +114,7 @@ jobs:
           GRAPH_HOST: ${{ vars.GRAPH_HOST }}
           STORY_MODE: ${{ vars.STORY_MODE }}
           TTS_REQUIRED: "1"
+          PREVIEW: ${{ inputs.preview && '1' || '' }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARGS="--show ${{ steps.gate.outputs.show }}"
@@ -130,7 +135,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember the episode, today's ticker and today's pattern
-        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson","didyouknow"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson","didyouknow","close"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"

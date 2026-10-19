@@ -48,18 +48,35 @@ STORY_KINDS = {"hot": ["cover"], "premarket": ["tiles", "setup"], "open": ["tile
 
 
 def pick_story_slides(show, sc, out_dir):
+    """[(png, slide)] for the Stories; slide is None for the Reel cover."""
     if os.environ.get("STORY_SLIDES") == "all":
-        return sorted(out_dir.glob("slide_*.png"), key=lambda p: int(p.stem.split("_")[1]))
+        return [(out_dir / f"slide_{i}.png", sl) for i, sl in enumerate(sc["slides"])]
     kinds = [sl["kind"] for sl in sc["slides"]]
     picked = []
     for k in STORY_KINDS[show]:
         if k == "cover" and (out_dir / "cover.png").exists():
-            picked.append(out_dir / "cover.png")
+            picked.append((out_dir / "cover.png", None))
         elif k in kinds:
-            picked.append(out_dir / f"slide_{kinds.index(k)}.png")
+            i = kinds.index(k)
+            picked.append((out_dir / f"slide_{i}.png", sc["slides"][i]))
         if show == "close" and picked:
             break  # sectors if we have them, otherwise the index tiles
     return picked
+
+
+def story_clips(stock, picked, out_dir):
+    """Each Story as a short animated clip: the slide builds in, the cover slowly pushes in."""
+    from PIL import Image
+
+    clips = []
+    for i, (png, sl) in enumerate(picked):
+        out = out_dir / f"story_{i}.mp4"
+        if sl is None:
+            render.still_clip(Image.open(png).convert("RGB"), out)
+        else:
+            render.story_clip(stock, sl, out)
+        clips.append(out)
+    return clips
 
 
 def main():
@@ -180,9 +197,23 @@ def main():
             if not m:
                 print("[data] US market didn't trade today, nothing to post")
                 return
-            sc, name = shows.session_script(m), args.show.upper()
             stock = {"ticker": "LIVE" if args.show == "open" else "CLOSE", "market": market, "asof": data.asof()}
-            args.story_only = True  # quick Story snapshots, no Reel
+            name = args.show.upper()
+            if args.show == "open":
+                sc = shows.session_script(m)
+                args.story_only = True  # a quick Story snapshot, no Reel
+            else:  # the evening recap is a Reel: the close, the sectors, and the day's news
+                if args.sample:
+                    for t in m["tiles"]:  # the sample has futures; the real close has the indices
+                        t["symbol"] = {"ES=F": "^GSPC", "NQ=F": "^IXIC", "YM=F": "^DJI"}.get(t["symbol"], t["symbol"])
+                    m["why"] = [{"ticker": "NVDA", "pct": 4.1, "news": [
+                        {"title": "Nvidia rises after new AI chip orders", "title_he": "אנבידיה עולה אחרי הזמנות חדשות לשבבי AI",
+                         "publisher": "Reuters", "date": "19.10"}]}]
+                    m["headlines"] = [{"title": "Stocks close higher as tech rallies", "title_he": "המניות נסגרו בעלייה בהובלת הטכנולוגיה",
+                                       "publisher": "CNBC", "date": "19.10"}]
+                else:
+                    mk.session_news(m)
+                sc = shows.close_script(m, ep, series.kicker("close", ep))
         elif args.show == "didyouknow":
             from stockreels import didyouknow
             sc = didyouknow.script(ep)
@@ -194,7 +225,7 @@ def main():
             stock = {"ticker": f"#{sc['number']}", "market": market}
 
     out_dir = ROOT / "output" / f"{today}_{name}"
-    if args.show in ("open", "close"):
+    if args.show == "open":
         out_dir.mkdir(parents=True, exist_ok=True)
         for i, sl in enumerate(sc["slides"]):
             render.RENDERERS[sl["kind"]]({**stock, **sl.get("head", {})}, sl).save(out_dir / f"slide_{i}.png")
@@ -203,7 +234,8 @@ def main():
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
         sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
-               "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}"}[args.show]
+               "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
+               "close": f"סיכום היום · פרק {ep}"}[args.show]
         render.cover(stock, first["title"], sub).save(out_dir / "cover.png")
         sc["caption"] = polish_caption(sc["caption"])
     (out_dir / "caption.txt").write_text(sc["caption"])
@@ -214,6 +246,14 @@ def main():
     print("[caption] " + sc["caption"].replace("\n", " / "))
 
     if args.dry_run or args.sample:
+        picked = pick_story_slides(args.show, sc, out_dir)
+        clips = story_clips(stock, picked, out_dir) if picked else []
+        print(f"[story] {len(clips)} clip(s) rendered")
+        if os.environ.get("PREVIEW") == "1" and not args.sample:  # attach to a release so it can be watched
+            from stockreels import instagram
+            rid = instagram._create_release(f"preview-{args.show}-{dt.datetime.now():%Y%m%d-%H%M}")
+            for f in ([video] if video else []) + clips:
+                print(f"[preview] {instagram._upload_asset(rid, str(f), Path(f).name, 'video/mp4')}")
         print("[upload] skipped")
         return
     from stockreels import instagram
@@ -232,11 +272,20 @@ def main():
             mk.log_setup(m["setup"], today)  # tomorrow's show reports how it played out
         print(f"[upload] published reel {media_id}")
 
-    # STORY_MODE: "slides" (each slide as a Story image, default), "video", "both" or "none"
-    mode = os.environ.get("STORY_MODE") or "slides"
+    # STORY_MODE: "clips" (each Story slide as a short animated clip, default), "slides" (still
+    # images), "video" (the whole Reel), "both" (slides and Reel) or "none"
+    mode = os.environ.get("STORY_MODE") or "clips"
     try:  # a failed story shouldn't fail the day's run, the reel is already up
+        if mode == "clips" and slides:
+            try:
+                clips = story_clips(stock, slides, out_dir)
+            except Exception as e:  # still post the Story, as images
+                print(f"[upload] story clips failed to render ({e}), posting images")
+                mode = "slides"
+            else:
+                print(f"[upload] published story clips {instagram.publish_story_clips(clips, tag + '-story')}")
         if mode in ("slides", "both"):
-            print(f"[upload] published story slides {instagram.publish_story_slides(slides, tag + '-story')}")
+            print(f"[upload] published story slides {instagram.publish_story_slides([p for p, _ in slides], tag + '-story')}")
         if mode in ("video", "both") and not args.story_only and video_url:
             print(f"[upload] published story video {instagram.publish_story(video_url=video_url)}")
     except Exception as e:

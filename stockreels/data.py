@@ -222,7 +222,7 @@ def with_hebrew(news):
     return news
 
 
-def google_news(ticker, n=3, max_age_days=10):
+def google_news(ticker, n=3, max_age_days=10, query=None):
     """Fallback headlines from Google News RSS, which names the publisher of every item."""
     import datetime as dt
     import email.utils
@@ -232,7 +232,7 @@ def google_news(ticker, n=3, max_age_days=10):
 
     try:
         r = requests.get("https://news.google.com/rss/search",
-                         params={"q": f"{ticker} stock when:{max_age_days}d", "hl": "en-US", "gl": "US", "ceid": "US:en"},
+                         params={"q": f"{query or ticker + ' stock'} when:{max_age_days}d", "hl": "en-US", "gl": "US", "ceid": "US:en"},
                          timeout=20, headers={"User-Agent": "Mozilla/5.0"})
         r.raise_for_status()
         items = ET.fromstring(r.content).findall("./channel/item")
@@ -255,6 +255,11 @@ def google_news(ticker, n=3, max_age_days=10):
     print(f"[news] google returned {len(items)} items")
     top = sorted(out[:n], key=lambda x: -x["ts"])  # most relevant few, newest first
     return [{k: v for k, v in x.items() if k != "ts"} for x in top]
+
+
+def market_headlines(n=3):
+    """Today's top Wall Street headlines, translated to Hebrew."""
+    return with_hebrew(google_news(None, n=n, max_age_days=1, query="Wall Street stocks today"))
 
 
 INDICES = [("S&P 500", "^GSPC"), ("NASDAQ", "^IXIC"), ("DOW", "^DJI"), ("VIX", "^VIX")]
