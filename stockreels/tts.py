@@ -17,6 +17,28 @@ def audio_duration(path):
     return float(json.loads(out)["format"]["duration"])
 
 
+# Broadcast-style voice chain: cut rumble, a little less boxiness, more presence,
+# gentle compression so quiet syllables don't drop away. Loudness is set once on the finished Reel.
+VOICE_CHAIN = ("highpass=f=75,equalizer=f=250:t=q:w=1:g=-2,equalizer=f=3200:t=q:w=1.2:g=2.5,"
+               "equalizer=f=9000:t=h:w=2000:g=1.5,"
+               "acompressor=threshold=-20dB:ratio=3:attack=5:release=90:makeup=3")
+LOUDNESS = "loudnorm=I=-14:TP=-1.5:LRA=9"  # what Instagram and most players aim for
+
+
+def polish(path):
+    """Run the voice chain over one narration file in place (same length, so word timings hold)."""
+    tmp = path + ".tmp.mp3"
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", path, "-af", VOICE_CHAIN,
+                    "-ar", "24000", "-c:a", "libmp3lame", "-q:a", "2", tmp], check=True)
+    os.replace(tmp, path)
+
+
+def master(src, dst):
+    """Voice chain plus loudness, for a stand-alone clip."""
+    subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-i", src, "-af", f"{VOICE_CHAIN},{LOUDNESS}",
+                    "-ar", "44100", "-c:a", "libmp3lame", "-q:a", "2", dst], check=True)
+
+
 def _silence(path, seconds):
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "lavfi", "-i", "anullsrc=r=24000:cl=mono",
                     "-t", f"{seconds:.2f}", "-c:a", "libmp3lame", path], check=True)
@@ -63,6 +85,8 @@ def synthesize(text, path, attempts=int(os.environ.get("TTS_ATTEMPTS", 4))):
         try:
             words = asyncio.run(_stream(text, path))
             if os.path.getsize(path) > 0:
+                if os.environ.get("VOICE_POLISH", "1") != "0":
+                    polish(path)
                 dur = audio_duration(path)
                 return dur, words or even_words(text, dur)
             raise RuntimeError("empty audio")

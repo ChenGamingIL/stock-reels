@@ -1,0 +1,35 @@
+name: Voice samples
+
+# Renders the same Hebrew lines in every candidate voice and attaches them to a release,
+# so the voice can be chosen by listening. Run by hand only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: |
+          for i in 1 2; do timeout 240 sh -c 'sudo apt-get update && sudo apt-get install -y ffmpeg' && break; done
+          pip install -q edge-tts requests
+      - name: Render and attach
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m stockreels.voices output/voices
+          python - <<'PY'
+          import datetime as dt, pathlib
+          from stockreels import instagram
+          tag = f"voice-samples-{dt.datetime.now():%Y%m%d-%H%M}"
+          rid = instagram._create_release(tag)
+          for p in sorted(pathlib.Path("output/voices").glob("*.mp3")):
+              print("[sample]", p.stem, instagram._upload_asset(rid, str(p), p.name, "audio/mpeg"))
+          PY
