@@ -1,25 +1,10 @@
 name: Daily stock reel
 
+# Started by clock.yml at each slot (GitHub's own cron was too unreliable):
+# 08:00 hot stock, 12:30 "did you know", 20:00 lesson (Israel time); pre-market 08:30, open 09:45 and
+# close 16:15 New York time, Mon-Fri. The Shabbat Shalom Story is shabbat.yml.
+# Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
 on:
-  schedule:
-    # GitHub cron is UTC only and Israel shifts between UTC+3 and UTC+2, so each slot has
-    # two crons and the "Israel time" step lets only the one matching today's offset through
-    # (market shows by New York's offset, so they keep their place around the bell):
-    # 08:00 hot stock, 12:30 "did you know" episode, 15:30 pre-market review (Mon-Fri), 16:45 market-open snapshot (Mon-Fri),
-    # 20:00 basics lesson, 23:15 end-of-day wrap (Mon-Fri). The Shabbat Shalom Story is shabbat.yml.
-    # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
-    - cron: "0 5 * * *"
-    - cron: "0 6 * * *"
-    - cron: "30 9 * * *"
-    - cron: "30 10 * * *"
-    - cron: "30 12 * * 1-5"
-    - cron: "30 13 * * 1-5"
-    - cron: "45 13 * * 1-5"
-    - cron: "45 14 * * 1-5"
-    - cron: "15 20 * * 1-5"
-    - cron: "15 21 * * 1-5"
-    - cron: "0 17 * * *"
-    - cron: "0 18 * * *"
   workflow_dispatch:
     inputs:
       show:
