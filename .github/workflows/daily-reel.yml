@@ -134,12 +134,7 @@ jobs:
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"
-          for f in history.json episodes.json setups.json; do if [ -f "$f" ]; then git add "$f"; fi; done
-          if git commit -m "${{ steps.gate.outputs.show }}: $(date +%F)"; then
-            for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
-          else
-            echo "nothing to commit"
-          fi
+          python -m stockreels.remember "${{ steps.gate.outputs.show }}: $(date +%F)"
       - name: Save logo
         if: ${{ inputs.fetch_logo == true }}
         run: |
