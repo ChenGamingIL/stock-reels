@@ -1,4 +1,5 @@
 name: Daily stock reel
+run-name: "${{ inputs.show }} ${{ inputs.dry_run && '(dry run)' || '' }}"
 
 # Started by clock.yml at each slot (GitHub's own cron was too unreliable):
 # 08:00 hot stock, 12:30 "did you know", 20:00 lesson (Israel time); pre-market 08:30, open 09:45 and

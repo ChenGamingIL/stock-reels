@@ -26,6 +26,7 @@ SLOTS = [(IL, (8, 0), "hot", 6, None), (IL, (12, 30), "didyouknow", 4, None), (I
          (NY, (8, 30), "premarket", 0.9, range(5)), (NY, (9, 45), "open", 2, range(5)),
          (NY, (16, 15), "close", 3, range(5))]
 SHABBAT_GRACE = 25 / 60  # shabbat.story_due accepts up to 8 minutes before candle lighting
+_hebcal = []
 
 
 def slots(now):
@@ -39,8 +40,9 @@ def slots(now):
                 out.append((dt.datetime.combine(day, dt.time(h, m), tz), show, grace, day.isoformat()))
     try:
         from stockreels import shabbat
-        windows, _ = shabbat.week_times(now.astimezone(IL))
-        for candles, _havdalah in windows:
+        if not _hebcal or now - _hebcal[0] > dt.timedelta(hours=1):  # the loop wakes every 5 minutes
+            _hebcal[:] = [now, shabbat.week_times(now.astimezone(IL))[0]]
+        for candles, _havdalah in _hebcal[1]:
             out.append((candles - shabbat.STORY_BEFORE, "shabbat", SHABBAT_GRACE, candles.date().isoformat()))
     except Exception as e:  # shabbat.yml's own 10-minute check still covers it
         print(f"[clock] no Hebcal times ({e.__class__.__name__}: {e})")
@@ -78,36 +80,93 @@ def dispatch(workflow, inputs):
     return False
 
 
+def workflow_of(show):
+    return "shabbat.yml" if show == "shabbat" else "daily-reel.yml"
+
+
 def fire(show):
     if show == "shabbat":
         return dispatch("shabbat.yml", {"dry_run": "false"})
     return dispatch("daily-reel.yml", {"show": show})
 
 
+def gh_json(path):
+    out = subprocess.run(["gh", "api", path], capture_output=True, text=True)
+    return json.loads(out.stdout) if out.returncode == 0 and out.stdout else {}
+
+
+def find_run(show, since):
+    """The id of the run a dispatch made: the newest dispatched run of that show since `since`
+    (daily-reel.yml names each run after its show)."""
+    runs = gh_json(f"repos/{REPO}/actions/workflows/{workflow_of(show)}/runs?event=workflow_dispatch&per_page=20")
+    ids = [r["id"] for r in runs.get("workflow_runs", [])
+           if dt.datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) >= since
+           and (show == "shabbat" or r.get("display_title", "").split(" ")[0] == show)]
+    return max(ids) if ids else None
+
+
+def alert(show, key, url):
+    """Open an issue on the repo: GitHub emails the owner, so a missed post never goes unnoticed."""
+    title = f"לא עלה: {show} {key}"
+    body = (f"הריצה של {show} ל-{key} נכשלה פעמיים, אז הפוסט לא עלה.\n\n{url}\n\n"
+            "The clock retried once; look at the run log for the error.")
+    print(f"[clock] ALERT {title} {url}", flush=True)
+    if not os.environ.get("CLOCK_DRY"):
+        subprocess.run(["gh", "api", "-X", "POST", f"repos/{REPO}/issues", "-f", f"title={title}", "-f", f"body={body}"])
+
+
+def check(watch, state):
+    """Follow each started run: retry a failed one once, then raise an alert."""
+    for w in list(watch):
+        if w["run"] is None:
+            w["run"] = find_run(w["show"], w["since"])
+            if w["run"] is None:
+                if dt.datetime.now(dt.timezone.utc) - w["since"] > dt.timedelta(minutes=20):
+                    alert(w["show"], w["key"], "(no run started)")
+                    watch.remove(w)
+                continue
+        run = gh_json(f"repos/{REPO}/actions/runs/{w['run']}")
+        if run.get("status") != "completed":
+            continue
+        watch.remove(w)
+        print(f"[clock] {w['show']} {w['key']}: {run.get('conclusion')} {run.get('html_url')}", flush=True)
+        if run.get("conclusion") == "success":
+            continue
+        if w["tries"] < 2:
+            since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=5)
+            if fire(w["show"]):
+                watch.append({**w, "run": None, "since": since, "tries": w["tries"] + 1})
+                continue
+        alert(w["show"], w["key"], run.get("html_url", ""))
+
+
 def run(budget=dt.timedelta(hours=5, minutes=30)):
     start = dt.datetime.now(dt.timezone.utc)
-    state = load()
+    state, watch = load(), []
     while True:
+        check(watch, state)
         now = dt.datetime.now(dt.timezone.utc)
         plan = slots(now)
         for due, show, grace, key in plan:  # anything due and not started yet, oldest first
             late = (now - due).total_seconds() / 3600
             if 0 <= late <= grace and state.get(show) != key:
+                since = dt.datetime.now(dt.timezone.utc) - dt.timedelta(seconds=5)
                 if fire(show):
+                    watch.append({"show": show, "key": key, "since": since, "run": None, "tries": 1})
                     state[show] = key
                     save(state, show)
                     time.sleep(90)  # let one show's run start before the next one
         now = dt.datetime.now(dt.timezone.utc)
         upcoming = [(due, show) for due, show, _, key in plan if due > now and state.get(show) != key]
-        if not upcoming:
-            print("[clock] nothing upcoming in the next day")
-            return
-        due, show = upcoming[0]
-        if due > start + budget:
+        due, show = upcoming[0] if upcoming else (now + dt.timedelta(days=1), "nothing")
+        if due > start + budget and not watch:
             print(f"[clock] next is {show} at {due.astimezone(IL):%a %H:%M} Israel, past this run's budget")
             return
-        print(f"[clock] sleeping until {show} at {due.astimezone(IL):%a %d.%m %H:%M} Israel", flush=True)
-        time.sleep(max(0, (due - now).total_seconds()) + 5)
+        if now > start + budget + dt.timedelta(minutes=10):
+            print("[clock] out of time; the next clock picks up from here")
+            return
+        print(f"[clock] next: {show} at {due.astimezone(IL):%a %d.%m %H:%M} Israel; watching {len(watch)} run(s)", flush=True)
+        time.sleep(min(300, max(0, (due - now).total_seconds()) + 5))
 
 
 if __name__ == "__main__":
