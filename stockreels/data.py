@@ -150,8 +150,10 @@ def short_name(name):
     """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration and titles."""
     import re
 
-    return re.sub(r"[,\s]+(Inc\.?|Corporation|Corp\.?|Holdings?|Ltd\.?|plc|N\.V\.|S\.A\.|Co\.|Company|Class [A-C])$", "",
-                  name.strip(), flags=re.I).strip() or name
+    short = re.sub(r"[,\s]+(Inc\.?|Corporation|Corp\.?|Holdings?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|Co\.|Company|Class [A-C])$", "",
+                   name.strip(), flags=re.I).strip() or name
+    # 'IREN LIMITED' -> 'IREN', 'ADVANCED MICRO DEVICES' -> 'Advanced Micro Devices'; short all-caps names stay
+    return short.title() if short.isupper() and len(short) > 5 else short
 
 
 def asof():

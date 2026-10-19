@@ -772,6 +772,9 @@ RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "proscons": slide_proscons, "track": slide_track, "fact": slide_fact}
 
 
+HEBREW = re.compile(r"[\u0590-\u05ff]")
+
+
 def caption_chunks(words, max_words=3, max_chars=20):
     """Group timed words into short caption lines: [([(word, start, end)], start, end)]."""
     chunks, cur = [], []
@@ -797,10 +800,19 @@ def caption_png(chunk, active, path):
         total = sum(widths) + gap * (len(chunk) - 1)
         dr.rounded_rectangle([W / 2 - total / 2 - 36, 8, W / 2 + total / 2 + 36, CAP_H - 8], 30,
                              fill=(0, 0, 0, 205), outline=GOLD_DARK + (255,), width=3)
-        x = W / 2 + total / 2  # right to left, word by word
-        for i, (w, wd) in enumerate(zip(chunk, widths)):
-            rtl_text(dr, (x, CAP_H / 2), w[0], size, ACCENT if i == active else WHITE, anchor="rm")
-            x -= wd + gap
+        # right to left, word by word; a run of English words keeps its own left-to-right order
+        order, run = [], []
+        for i, w in enumerate(chunk):
+            if HEBREW.search(w[0]):
+                order += run[::-1] + [i]
+                run = []
+            else:
+                run.append(i)
+        order += run[::-1]
+        x = W / 2 + total / 2
+        for i in order:
+            rtl_text(dr, (x, CAP_H / 2), chunk[i][0], size, ACCENT if i == active else WHITE, anchor="rm")
+            x -= widths[i] + gap
     img.save(path)
 
 
