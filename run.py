@@ -231,6 +231,7 @@ def main():
             render.RENDERERS[sl["kind"]]({**stock, **sl.get("head", {})}, sl).save(out_dir / f"slide_{i}.png")
         video = None
     else:
+        sc.setdefault("music", args.show)
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
         sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",

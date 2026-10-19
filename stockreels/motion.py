@@ -18,6 +18,8 @@ IN_TIME = 0.5      # seconds each piece takes to arrive
 OUT_TIME = 0.28    # content fade before the cut
 TAPE_SPEED = 70    # px per second
 COUNT_TIME = 1.0   # seconds a headline number takes to count up
+OUT_LIFT = 34      # px the content drifts up as it leaves
+FIRST_SHIFT = 0.45  # the first slide starts part way into its build-in, so the very first frame already hooks
 
 
 def ease_out(t):
@@ -76,6 +78,12 @@ class Pieces:
             end = max(end, 0.1 + self.stagger * self.count_band + COUNT_TIME + 0.05)
         return end
 
+    def hook_shift(self):
+        """Where the opening slide starts: the title already up and the headline number mid-count."""
+        if self.count and self.count_band is not None:
+            return 0.1 + self.stagger * self.count_band + 0.3 * COUNT_TIME
+        return min(FIRST_SHIFT, self.built_by())
+
     def frame(self, t, fade=1.0):
         """The slide at `t` seconds; `fade` < 1 dims the content toward the bare frame."""
         if self.coverage > 0.6:  # not drawn on the shared frame: a plain fade in
@@ -83,6 +91,7 @@ class Pieces:
         if t >= self.built_by() and fade >= 1:
             return self.still.copy()
         img = self.chrome.copy()
+        lift = round(OUT_LIFT * (1 - fade))
         for i, b in enumerate(self.bands):
             start = 0.1 + i * self.stagger
             p = ease_out((t - start) / (IN_TIME * (1.6 if b["wipe"] else 1)))
@@ -90,7 +99,7 @@ class Pieces:
                 continue
             x0, y0, x1, y1 = b["box"]
             if self.count and i == self.count_band and t - start < COUNT_TIME:
-                self._draw_count(img, (t - start) / COUNT_TIME, p * fade, round(RISE * (1 - p)))
+                self._draw_count(img, (t - start) / COUNT_TIME, p * fade, round(RISE * (1 - p)) - lift)
                 continue
             alpha = min(1.0, (t - start) / 0.25) if b["wipe"] else p
             alpha *= fade
@@ -99,11 +108,21 @@ class Pieces:
                 bw, bh = x1 - x0, y1 - y0
                 w = max(1, int(bw * p))
                 part = (0, 0, w, bh) if self.ltr else (bw - w, 0, bw, bh)
-                img.paste(b["img"].crop(part), (x0 + part[0], y0), mask.crop(part))
+                img.paste(b["img"].crop(part), (x0 + part[0], y0 - lift), mask.crop(part))
             else:
-                img.paste(b["img"], (x0, y0 + round(RISE * (1 - p))), mask)
+                img.paste(b["img"], (x0, y0 + round(RISE * (1 - p)) - lift), mask)
         return img
 
+    def events(self, shift=0.0):
+        """Sound cues for this slide, in seconds from its first frame: [(t, kind, arg)]."""
+        out = []
+        for i, b in enumerate(self.bands[:7]):
+            start = 0.1 + i * self.stagger - shift
+            if self.count and i == self.count_band:
+                out += [(start, "riser", COUNT_TIME), (start + COUNT_TIME, "ding", None)]
+            elif start + IN_TIME * 0.55 > 0:
+                out.append((start + IN_TIME * 0.55, "pop", None))
+        return out
 
     def _draw_count(self, img, progress, alpha, dy):
         text = counting(self.count["text"], ease_out(progress))
@@ -159,16 +178,38 @@ class Tape:
         img.paste(self.strip.crop((off, 0, off + img.width, TAPE_H)), (0, 0))
 
 
-def frames(pieces, dur, tape=None, t0=0.0, fade_out=True):
-    """Yield every frame of one slide as raw RGB bytes."""
+class Glow:
+    """A soft gold light drifting slowly behind everything, so the frame never sits dead still."""
+
+    def __init__(self, size=1300, strength=0.075, color=(232, 196, 120)):
+        r = np.hypot(*np.meshgrid(np.linspace(-1, 1, size), np.linspace(-1, 1, size)))
+        alpha = (np.clip(1 - r, 0, 1) ** 2.2 * 255 * strength).astype(np.uint8)
+        self.mask = Image.fromarray(alpha)
+        self.fill = Image.new("RGB", (size, size), color)
+        self.size = size
+
+    def paste(self, img, seconds):
+        cx = img.width / 2 + 330 * math.sin(2 * math.pi * seconds / 17 + 1.3)
+        cy = img.height * 0.52 + 380 * math.sin(2 * math.pi * seconds / 23)
+        img.paste(self.fill, (int(cx - self.size / 2), int(cy - self.size / 2)), self.mask)
+
+
+GLOW = None
+
+
+def frames(pieces, dur, tape=None, t0=0.0, fade_out=True, shift=0.0):
+    """Yield every frame of one slide as raw RGB bytes. `shift` starts the build-in part way through."""
+    global GLOW
+    GLOW = GLOW or Glow()
     n = max(1, math.ceil(dur * FPS))
     for k in range(n):
         t = k / FPS
         fade = 1.0
         if fade_out and t > dur - OUT_TIME:
             fade = max(0.0, (dur - t) / OUT_TIME)
-        img = pieces.frame(t, fade)
-        shine(img, t)
+        img = pieces.frame(t + shift, fade)
+        GLOW.paste(img, t0 + t)
+        shine(img, t + shift)
         if tape:
             tape.paste(img, t0 + t)
         yield img.tobytes()

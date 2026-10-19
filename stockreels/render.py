@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, features
 
 from .script import DISCLAIMER
-from . import motion
+from . import motion, sound
 from .tts import LOUDNESS, synthesize
 
 W, H = 1080, 1920
@@ -844,7 +844,7 @@ def caption_track(words, dur, out_dir, prefix):
     return lst
 
 
-def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out=True):
+def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out=True, shift=0.0):
     """Stream the slide's frames into ffmpeg with its narration, progress bar and captions."""
     inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-framerate", str(motion.FPS), "-i", "-"]
     inputs += ["-i", str(mp3)] if mp3 else ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
@@ -864,7 +864,7 @@ def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", str(seg),
     ], stdin=subprocess.PIPE)
     try:
-        for raw in motion.frames(pieces, dur, tape, t0, fade_out):
+        for raw in motion.frames(pieces, dur, tape, t0, fade_out, shift):
             proc.stdin.write(raw)
     except BrokenPipeError:
         pass
@@ -888,19 +888,36 @@ def render_video(d, script, out_dir):
         parts.append((motion.Pieces(full, chrome(dd)), mp3, dur + 0.45, words))
     total = sum(p[2] for p in parts)
     tape = motion.Tape(*tape_strip(d))
-    segments, offset = [], 0.0
+    segments, events, offset = [], [(0.0, "hit", None)], 0.0
     for i, (pieces, mp3, dur, words) in enumerate(parts):
         seg = out_dir / f"slide_{i}.mp4"
         caps = caption_track(words, dur, out_dir, f"s{i}") if captions and words else None
-        _encode_slide(pieces, dur, mp3, caps, tape, offset, total, offset, seg, fade_out=i < len(parts) - 1)
+        shift = pieces.hook_shift() if i == 0 else 0.0
+        _encode_slide(pieces, dur, mp3, caps, tape, offset, total, offset, seg, fade_out=i < len(parts) - 1,
+                      shift=shift)
+        if i:
+            events.append((offset, "whoosh", None))
+        events += [(offset + t, kind, arg) for t, kind, arg in pieces.events(shift)]
         segments.append(seg)
         offset += dur
     listing = out_dir / "segments.txt"
     listing.write_text("".join(f"file '{s.name}'\n" for s in segments))
     final = out_dir / "reel.mp4"
-    # one loudness pass over the whole Reel so every slide sits at the same level
+    if os.environ.get("MUSIC", "1") == "0":
+        subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
+                        "-c:v", "copy", "-af", LOUDNESS, "-ar", "44100", "-c:a", "aac", "-b:a", "160k",
+                        "-movflags", "+faststart", str(final)], check=True)
+        return final
+    # the show's music under the voice, ducking whenever someone speaks, plus the effects; one loudness pass
+    music_wav, fx_wav = out_dir / "music.wav", out_dir / "fx.wav"
+    sound.write_wav(music_wav, sound.music(script.get("music", "hot"), total))
+    sound.write_wav(fx_wav, sound.effects(events, total))
+    graph = ("[0:a]aformat=channel_layouts=stereo,aresample=44100,asplit=2[vo][key];"
+             "[1:a]volume=0.25[mu];[mu][key]sidechaincompress=threshold=0.012:ratio=6:attack=30:release=450[bed];"
+             f"[vo][bed][2:a]amix=inputs=3:duration=first:normalize=0,{LOUDNESS}[a]")
     subprocess.run(["ffmpeg", "-y", "-loglevel", "error", "-f", "concat", "-safe", "0", "-i", str(listing),
-                    "-c:v", "copy", "-af", LOUDNESS, "-ar", "44100", "-c:a", "aac", "-b:a", "160k",
+                    "-i", str(music_wav), "-i", str(fx_wav), "-filter_complex", graph,
+                    "-map", "0:v", "-map", "[a]", "-c:v", "copy", "-ar", "44100", "-c:a", "aac", "-b:a", "192k",
                     "-movflags", "+faststart", str(final)], check=True)
     return final
 
