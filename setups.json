@@ -1,0 +1,10 @@
+[
+  {
+    "date": "2026-10-20",
+    "ticker": "PLTR",
+    "kind": "pullback",
+    "trigger": 197.38,
+    "stop": 184.45,
+    "target": 223.24
+  }
+]
