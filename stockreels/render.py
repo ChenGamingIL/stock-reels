@@ -51,9 +51,15 @@ def font(size):
 # dates and clock times first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
 NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|\d{1,2}:\d{2}|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
 
+HEBREW_CHARS = re.compile(r"[\u0590-\u05ff]")
+LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z0-9&./'-]*(?: [A-Za-z0-9&./'-]+)+")
+
 
 def _visual(text):
-    # keep signed numbers like +6.4% or -$1.2B in LTR order inside Hebrew lines
+    # keep multi-word English names ("S&P 500", "Palo Alto Networks") and signed numbers like +6.4%
+    # or -$1.2B in LTR order inside Hebrew lines
+    if HEBREW_CHARS.search(text):
+        text = LATIN_RUN.sub(lambda m: "\u2066" + m.group(0) + "\u2069", text)
     text = NUM_RE.sub(lambda m: "\u2066" + m.group(0) + "\u2069", text)
     if HAS_RAQM:
         return text
@@ -665,8 +671,7 @@ def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=Non
         if sub:
             rtl_text(dr, (W // 2, y + 30), sub, 52, ACCENT, anchor="ma")
         return img
-    if badge:  # keep a Latin name with a number ("S&P 500") in its own order inside Hebrew
-        badge = re.sub(r"[A-Za-z][A-Za-z0-9&./]*(?: [A-Za-z0-9&./]+)+", lambda m: "\u2066" + m.group(0) + "\u2069", badge)
+    if badge:
         size = _fit(badge, 78, 700)
         tw = font(size).getlength(_visual(badge)) + 80
         dr.rounded_rectangle([(W - tw) / 2, 330, (W + tw) / 2, 450], 60, fill=ACCENT)
