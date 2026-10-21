@@ -74,12 +74,6 @@ def media_stats(media_id):
     return out
 
 
-def delete_media(media_id):
-    """Remove one post from the account. Can't be undone."""
-    return _check(requests.delete(f"https://{HOST}/{VERSION}/{media_id}",
-                                  params={"access_token": os.environ["IG_ACCESS_TOKEN"]}, timeout=30))
-
-
 def refresh_token():
     """Exchange the current long-lived token for a fresh 60-day one (Instagram Login only).
 
