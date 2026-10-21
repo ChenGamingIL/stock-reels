@@ -12,7 +12,7 @@ permissions:
 jobs:
   covers:
     runs-on: ubuntu-latest
-    timeout-minutes: 30
+    timeout-minutes: 60
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
@@ -27,17 +27,23 @@ jobs:
       - name: Download Hebrew font (Heebo)
         run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
       - run: pip install -r requirements.txt
-      - name: Render and attach
+      - name: Render
+        timeout-minutes: 50
         env:
           FAL_KEY: ${{ secrets.FAL_KEY }}
+          PYTHONUNBUFFERED: "1"
+        run: python redo_covers.py output/redo
+      - name: Attach to a release
+        if: always()  # whatever got rendered, even if the picture service was slow
+        env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          python redo_covers.py output/redo
           python - <<'PY'
           import datetime as dt, pathlib
           from stockreels import instagram
           files = sorted(pathlib.Path("output/redo").glob("[0-9][0-9]_*.jpg"))
-          rid = instagram._create_release(f"redo-covers-{dt.datetime.now():%Y%m%d-%H%M}")
-          for p in files:
-              print("[cover]", p.name, instagram._upload_asset(rid, str(p), p.name, "image/jpeg"))
+          if files:
+              rid = instagram._create_release(f"redo-covers-{dt.datetime.now():%Y%m%d-%H%M}")
+              for p in files:
+                  print("[cover]", p.name, instagram._upload_asset(rid, str(p), p.name, "image/jpeg"))
           PY

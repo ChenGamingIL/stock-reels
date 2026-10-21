@@ -91,15 +91,17 @@ def main(out_dir):
             if wait > 0 and not os.environ.get("FAL_KEY"):
                 time.sleep(wait)
             what = p.get("look") or aiart.subject(p["show"], stock, p["ep"] or 0)
-            print(f"[redo] {p['date']} {p['show']}: {what}")
-            bg = aiart.generate(what, out_dir / f"bg_{i:02d}.jpg", seed=int(p["date"].replace("-", "")) + i)
+            print(f"[redo] {p['date']} {p['show']}: {what}", flush=True)
             last = time.time()
+            bg = aiart.generate(what, out_dir / f"bg_{i:02d}.jpg", seed=int(p["date"].replace("-", "")) + i,
+                                attempts=2, timeout=90)
         title = sc["slides"][0]["title"]
         img = render.cover({**stock, "bg": render.backdrop_image(bg)}, title, sub, **spec).convert("RGB")
         path = out_dir / f"{i:02d}_{p['date']}_{p['show']}{'_' + p['ticker'] if p.get('ticker') else ''}.jpg"
         img.save(path, quality=92)
         covers.append(path)
-        print(f"[redo] {path.name}: {spec.get('big')} | {spec.get('line')} | {'AI picture' if bg else 'no picture'}")
+        print(f"[redo] {path.name}: {spec.get('big')} | {spec.get('line')} | {'AI picture' if bg else 'no picture'}",
+              flush=True)
     print(f"[redo] grid: {grid(covers, out_dir / '00_grid.jpg')}")
     return covers
 
