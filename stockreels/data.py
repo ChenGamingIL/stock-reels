@@ -109,6 +109,7 @@ def fetch_stock(ticker):
         "ticker": ticker,
         "name": short_name(info.get("shortName") or ticker),
         "sector": info.get("sector"),
+        "industry": info.get("industry"),
         "currency": info.get("currency", "USD"),
         "price": _num(info.get("currentPrice") or (hist.iloc[-1] if len(hist) else None)),
         "change_5d_pct": _num((hist.iloc[-1] / hist.iloc[-6] - 1) * 100) if len(hist) > 6 else None,

@@ -64,17 +64,20 @@ def pick_story_slides(show, sc, out_dir):
     return picked
 
 
-def story_clips(stock, picked, out_dir):
-    """Each Story as a short animated clip: the slide builds in, the cover slowly pushes in."""
+def story_clips(stock, picked, out_dir, sc=None):
+    """Each Story as a short animated clip: the slide builds in, the cover slowly pushes in.
+    The Reel's opening slide keeps its AI picture as a Story too."""
     from PIL import Image
 
     clips = []
+    bg = render.backdrop_image((sc or {}).get("bg"))
+    first = (sc or {}).get("slides", [None])[0]
     for i, (png, sl) in enumerate(picked):
         out = out_dir / f"story_{i}.mp4"
         if sl is None:
             render.still_clip(Image.open(png).convert("RGB"), out)
         else:
-            render.story_clip(stock, sl, out)
+            render.story_clip({**stock, "bg": bg} if bg is not None and sl is first else stock, sl, out)
         clips.append(out)
     return clips
 
@@ -255,12 +258,21 @@ def main():
         video = None
     else:
         sc.setdefault("music", args.show)
+        out_dir.mkdir(parents=True, exist_ok=True)
+        from stockreels import aiart
+        try:  # an AI picture behind the opening, the sign-off and the cover; the Reel works without it
+            bg = aiart.backdrop(args.show, stock, out_dir, episode=ep or 0,
+                                seed=dt.date.today().toordinal() * 10 + len(args.show))
+            if bg:
+                sc["bg"] = str(bg)
+        except Exception as e:
+            print(f"[aiart] skipped: {e.__class__.__name__}: {e}")
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
         sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
                "close": f"סיכום היום · פרק {ep}"}[args.show]
-        render.cover(stock, first["title"], sub).save(out_dir / "cover.png")
+        render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub).save(out_dir / "cover.png")
         sc["caption"] = polish_caption(sc["caption"])
     (out_dir / "caption.txt").write_text(sc["caption"])
     (out_dir / "script.json").write_text(json.dumps(sc, ensure_ascii=False, indent=2))
@@ -271,7 +283,7 @@ def main():
 
     if args.dry_run or args.sample:
         picked = pick_story_slides(args.show, sc, out_dir)
-        clips = story_clips(stock, picked, out_dir) if picked else []
+        clips = story_clips(stock, picked, out_dir, sc) if picked else []
         print(f"[story] {len(clips)} clip(s) rendered")
         if os.environ.get("PREVIEW") == "1" and not args.sample:  # attach to a release so it can be watched
             from stockreels import instagram
@@ -302,7 +314,7 @@ def main():
     try:  # a failed story shouldn't fail the day's run, the reel is already up
         if mode == "clips" and slides:
             try:
-                clips = story_clips(stock, slides, out_dir)
+                clips = story_clips(stock, slides, out_dir, sc)
             except Exception as e:  # still post the Story, as images
                 print(f"[upload] story clips failed to render ({e}), posting images")
                 mode = "slides"

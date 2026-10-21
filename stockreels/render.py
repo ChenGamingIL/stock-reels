@@ -100,17 +100,21 @@ def paste_logo(img, xy, size, ring=True):
 
 
 def base(d, title):
-    img = Image.new("RGB", (W, H))
-    px = ImageDraw.Draw(img)
-    for y in range(H):
-        t = y / H
-        px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
-    dr = ImageDraw.Draw(img)
-    # faint trading-terminal grid
-    for gx in range(0, W, 90):
-        dr.line([(gx, 90), (gx, H - 260)], fill=(30, 25, 16), width=1)
-    for gy in range(90, H - 260, 90):
-        dr.line([(0, gy), (W, gy)], fill=(30, 25, 16), width=1)
+    if d.get("bg") is not None:  # an AI picture (aiart.grade) instead of the terminal gradient and grid
+        img = d["bg"].copy()
+        dr = ImageDraw.Draw(img)
+    else:
+        img = Image.new("RGB", (W, H))
+        px = ImageDraw.Draw(img)
+        for y in range(H):
+            t = y / H
+            px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
+        dr = ImageDraw.Draw(img)
+        # faint trading-terminal grid
+        for gx in range(0, W, 90):
+            dr.line([(gx, 90), (gx, H - 260)], fill=(30, 25, 16), width=1)
+        for gy in range(90, H - 260, 90):
+            dr.line([(0, gy), (W, gy)], fill=(30, 25, 16), width=1)
     ticker_tape(dr, d)
     # header: logo + ticker badge + price, gold rule underneath
     paste_logo(img, (60, 105), 130)
@@ -901,19 +905,36 @@ def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out
         raise RuntimeError(f"ffmpeg failed on {seg}")
 
 
+def backdrop_image(path):
+    """The graded AI picture for this Reel, or None."""
+    if not path:
+        return None
+    try:
+        from .aiart import grade
+        return grade(path)
+    except Exception as e:  # a broken download never stops the Reel
+        print(f"[aiart] can't use {path}: {e.__class__.__name__}: {e}")
+        return None
+
+
 def render_video(d, script, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
     captions = os.environ.get("CAPTIONS", "1") != "0"
     # narrate everything first: the progress bar needs the total length
     parts = []
+    bg = backdrop_image(script.get("bg"))
+    last = len(script["slides"]) - 1
     for i, sl in enumerate(script["slides"]):
         dd = {**d, **sl.get("head", {})}
+        drift = None
+        if bg is not None and i in (0, last):  # the opening and the sign-off play over the AI picture
+            dd["bg"], drift = bg, motion.Backdrop(bg)
         png, mp3 = out_dir / f"slide_{i}.png", out_dir / f"slide_{i}.mp3"
         full = RENDERERS[sl["kind"]](dd, sl)
         full.save(png)
         dur, words = synthesize(sl["narration"], str(mp3))
-        parts.append((motion.Pieces(full, chrome(dd)), mp3, dur + 0.45, words))
+        parts.append((motion.Pieces(full, chrome(dd), backdrop=drift), mp3, dur + 0.45, words))
     total = sum(p[2] for p in parts)
     tape = motion.Tape(*tape_strip(d))
     segments, events, offset = [], [(0.0, "hit", None)], 0.0
@@ -954,7 +975,8 @@ def story_clip(d, sl, out, seconds=7.0):
     """A Story as a short animated clip: the slide builds in over the shared frame and holds."""
     dd = {**d, **sl.get("head", {})}
     full = RENDERERS[sl["kind"]](dd, sl)
-    _encode_slide(motion.Pieces(full, chrome(dd)), seconds, None, None, motion.Tape(*tape_strip(dd)),
+    drift = motion.Backdrop(dd["bg"]) if dd.get("bg") is not None else None
+    _encode_slide(motion.Pieces(full, chrome(dd), backdrop=drift), seconds, None, None, motion.Tape(*tape_strip(dd)),
                   0.0, 0, 0, out, fade_out=False)
     return out
 

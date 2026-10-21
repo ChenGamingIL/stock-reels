@@ -115,6 +115,7 @@ jobs:
           STORY_MODE: ${{ vars.STORY_MODE }}
           TTS_REQUIRED: "1"
           PREVIEW: ${{ inputs.preview && '1' || '' }}
+          FAL_KEY: ${{ secrets.FAL_KEY }}  # optional: sharper AI pictures from fal.ai; without it the free service is used
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           ARGS="--show ${{ steps.gate.outputs.show }}"

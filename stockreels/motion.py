@@ -30,7 +30,8 @@ def ease_out(t):
 class Pieces:
     """What a slide adds over the shared frame, split into horizontal bands, top to bottom."""
 
-    def __init__(self, full, chrome, gap=14, max_pieces=9):
+    def __init__(self, full, chrome, gap=14, max_pieces=9, backdrop=None):
+        self.backdrop = backdrop  # a picture drifting behind the slide (Backdrop), or None for the plain frame
         self.count = full.info.get("count")  # a headline number that counts up as it arrives
         self.ltr = full.info.get("wipe") == "ltr"  # charts draw in from the left, Hebrew tables from the right
         self.full, self.chrome = full.convert("RGB"), chrome.convert("RGB")
@@ -41,6 +42,10 @@ class Pieces:
         self.mask = mask.filter(ImageFilter.GaussianBlur(1.5))
         # the still frame the animation lands on: exactly what the pieces add up to
         self.still = Image.composite(self.full, self.chrome, self.mask)
+        if backdrop is not None:  # the header and footer stay put while the picture moves under them
+            fixed = np.asarray(ImageChops.difference(self.chrome, backdrop.still).convert("L")) > 10
+            self.chrome_mask = Image.fromarray((fixed * 255).astype(np.uint8)).filter(
+                ImageFilter.MaxFilter(5)).filter(ImageFilter.GaussianBlur(1))
         rows = np.flatnonzero(diff.any(1))
         bands = []
         for y in rows:
@@ -84,13 +89,25 @@ class Pieces:
             return 0.1 + self.stagger * self.count_band + 0.3 * COUNT_TIME
         return min(FIRST_SHIFT, self.built_by())
 
+    def ground(self, t):
+        """The empty frame at `t`: the shared chrome, over the moving picture when there is one."""
+        if self.backdrop is None:
+            return self.chrome.copy()
+        img = self.backdrop.at(t)
+        img.paste(self.chrome, (0, 0), self.chrome_mask)
+        return img
+
     def frame(self, t, fade=1.0):
         """The slide at `t` seconds; `fade` < 1 dims the content toward the bare frame."""
         if self.coverage > 0.6:  # not drawn on the shared frame: a plain fade in
             return Image.blend(self.chrome, self.full, ease_out(t / IN_TIME) * fade)
         if t >= self.built_by() and fade >= 1:
-            return self.still.copy()
-        img = self.chrome.copy()
+            if self.backdrop is None:
+                return self.still.copy()
+            img = self.ground(t)
+            img.paste(self.full, (0, 0), self.mask)
+            return img
+        img = self.ground(t)
         lift = round(OUT_LIFT * (1 - fade))
         for i, b in enumerate(self.bands):
             start = 0.1 + i * self.stagger
@@ -163,6 +180,21 @@ def shine(img, t, y=268, x0=60, x1=1020):
         for sx in (cx + k * 6, cx - k * 6):
             if x0 <= sx <= x1:
                 dr.line([(sx, y - 1), (sx + 6, y - 1)], fill=c, width=4)
+
+
+class Backdrop:
+    """A picture behind a slide, slowly pushing in and drifting up, like a camera move."""
+
+    def __init__(self, img, zoom_per_s=0.014, max_zoom=0.14):
+        self.still = img.convert("RGB")
+        self.zoom_per_s, self.max_zoom = zoom_per_s, max_zoom
+
+    def at(self, t):
+        z = 1 + min(self.zoom_per_s * max(t, 0), self.max_zoom)
+        w, h = self.still.width / z, self.still.height / z
+        x0 = (self.still.width - w) / 2
+        y0 = (self.still.height - h) * 0.42  # a touch above centre, so the move reads as rising
+        return self.still.resize(self.still.size, Image.BILINEAR, box=(x0, y0, x0 + w, y0 + h))
 
 
 class Tape:
