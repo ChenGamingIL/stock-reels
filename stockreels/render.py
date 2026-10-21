@@ -51,15 +51,13 @@ def font(size):
 # dates and clock times first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
 NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|\d{1,2}:\d{2}|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
 
-HEBREW_CHARS = re.compile(r"[\u0590-\u05ff]")
 LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z0-9&./'-]*(?: [A-Za-z0-9&./'-]+)+")
 
 
 def _visual(text):
     # keep multi-word English names ("S&P 500", "Palo Alto Networks") and signed numbers like +6.4%
     # or -$1.2B in LTR order inside Hebrew lines
-    if HEBREW_CHARS.search(text):
-        text = LATIN_RUN.sub(lambda m: "\u2066" + m.group(0) + "\u2069", text)
+    text = LATIN_RUN.sub(lambda m: "\u2066" + m.group(0) + "\u2069", text)
     text = NUM_RE.sub(lambda m: "\u2066" + m.group(0) + "\u2069", text)
     if HAS_RAQM:
         return text
@@ -105,7 +103,7 @@ def paste_logo(img, xy, size, ring=True):
                                     outline=ACCENT, width=4)
 
 
-def base(d, title):
+def base(d, title, brand_y=H - 250):
     if d.get("bg") is not None:  # an AI picture (aiart.grade) instead of the terminal gradient and grid
         img = d["bg"].copy()
         dr = ImageDraw.Draw(img)
@@ -152,9 +150,9 @@ def base(d, title):
         rtl_text(dr, (W - 70, ty + i * 100), line, 76)
     # footer: brand, where the numbers come from and when, disclaimer, on every slide
     dr.line([(60, H - 205), (W - 60, H - 205)], fill=GOLD_DARK, width=2)
-    dr.text((60, H - 250), f"@{BRAND.lower()}", font=font(32), fill=ACCENT)
+    dr.text((60, brand_y), f"@{BRAND.lower()}", font=font(32), fill=ACCENT)
     if d.get("asof"):
-        rtl_text(dr, (W - 60, H - 248), f"נתונים: {d.get('source') or 'Yahoo Finance'} · \u2066{d['asof']}\u2069", 28, MUTED)
+        rtl_text(dr, (W - 60, brand_y + 2), f"נתונים: {d.get('source') or 'Yahoo Finance'} · \u2066{d['asof']}\u2069", 28, MUTED)
     for i, line in enumerate(wrap(DISCLAIMER, 30, W - 120)):
         rtl_text(dr, (W - 60, H - 170 + i * 42), line, 30, MUTED)
     return img, dr
@@ -661,7 +659,8 @@ def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=Non
     a gold badge above it and the hook under it, all inside the 3:4 area the profile grid shows
     (y 240 to 1680), over the day's AI picture when there is one."""
     bg = d.get("bg")
-    img, dr = base({**d, "bg": _vignette(bg) if bg is not None else None, "kicker": None}, "")
+    # the handle and the data line go under the disclaimer, clear of the grid's crop
+    img, dr = base({**d, "bg": _vignette(bg) if bg is not None else None, "kicker": None}, "", brand_y=H - 78)
     if not big:  # nothing to put big: the headline itself, large
         lines = wrap(line or title, 112, W - 140)[:4]
         y = 930 - len(lines) * 66
@@ -678,10 +677,12 @@ def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=Non
         rtl_text(dr, (W // 2, 390), badge, size, INK, anchor="mm")
     _glow_text(img, (W // 2, 790), big, _fit(big, 330, W - 100), tuple(color or ACCENT))
     dr = ImageDraw.Draw(img)
-    y = 1030
-    for ln in wrap(line or title, 92, W - 140)[:2]:
-        rtl_text(dr, (W // 2, y), ln, 92, WHITE, anchor="ma")
-        y += 112
+    y, size = 1030, 92
+    while len(wrap(line or title, size, W - 140)) > 2 and size > 66:  # a long company name still fits in two lines
+        size -= 4
+    for ln in wrap(line or title, size, W - 140)[:2]:
+        rtl_text(dr, (W // 2, y), ln, size, WHITE, anchor="ma")
+        y += size + 20
     if ask:
         rtl_text(dr, (W // 2, y + 6), ask, 92, ACCENT, anchor="ma")
     if sub:

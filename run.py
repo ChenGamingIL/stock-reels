@@ -65,7 +65,7 @@ def pick_story_slides(show, sc, out_dir):
 
 
 def _pct(v):
-    return f"{v:+.0f}%" if abs(v) >= 10 else f"{v:+.1f}%"
+    return f"{v:+.0f}%" if abs(v) >= 10 else f"{v:+.1f}%" if abs(v) >= 1 else f"{v:+.2f}%"
 
 
 def _tone(text):

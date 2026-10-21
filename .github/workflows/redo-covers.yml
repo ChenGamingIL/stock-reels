@@ -1,0 +1,43 @@
+name: Redo old covers
+
+# Renders the new "big number" cover for every Reel posted before the redesign and attaches the
+# pictures to a release, to swap in from the Instagram app (the API can't change a published
+# cover). Posts nothing. Run by hand only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  covers:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - name: Install system packages
+        run: |
+          for i in 1 2; do
+            timeout 240 sh -c 'sudo apt-get update && sudo apt-get install -y libraqm0' && exit 0
+          done
+          exit 1
+      - name: Download Hebrew font (Heebo)
+        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+      - run: pip install -r requirements.txt
+      - name: Render and attach
+        env:
+          FAL_KEY: ${{ secrets.FAL_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python redo_covers.py output/redo
+          python - <<'PY'
+          import datetime as dt, pathlib
+          from stockreels import instagram
+          files = sorted(pathlib.Path("output/redo").glob("[0-9][0-9]_*.jpg"))
+          rid = instagram._create_release(f"redo-covers-{dt.datetime.now():%Y%m%d-%H%M}")
+          for p in files:
+              print("[cover]", p.name, instagram._upload_asset(rid, str(p), p.name, "image/jpeg"))
+          PY
