@@ -1,0 +1,34 @@
+name: AI image samples
+
+# Generates a handful of AI backgrounds and attaches them to a release, to check the
+# image service works from GitHub and how the pictures look. Run by hand only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests
+      - name: Generate and attach
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python -m stockreels.aiart output/ai
+          python - <<'PY'
+          import datetime as dt, pathlib
+          from stockreels import instagram
+          files = sorted(pathlib.Path("output/ai").glob("*.jpg"))
+          if files:
+              rid = instagram._create_release(f"ai-samples-{dt.datetime.now():%Y%m%d-%H%M}")
+              for p in files:
+                  print("[sample]", p.stem, instagram._upload_asset(rid, str(p), p.name, "image/jpeg"))
+          PY
