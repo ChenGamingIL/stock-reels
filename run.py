@@ -64,6 +64,40 @@ def pick_story_slides(show, sc, out_dir):
     return picked
 
 
+def _pct(v):
+    return f"{v:+.0f}%" if abs(v) >= 10 else f"{v:+.1f}%"
+
+
+def _tone(text):
+    t = str(text).strip()
+    return render.RED if t.startswith(("-", "\u2212")) else render.GREEN if t.startswith("+") else render.ACCENT
+
+
+def cover_spec(show, stock, sc, m=None):
+    """What the "big number" cover shows for this post: the number, its colour, the badge and the hook."""
+    first = sc["slides"][0]
+    title = first["title"]
+    if show == "hot" and stock.get("change_5d_pct") is not None:
+        ch = stock["change_5d_pct"]
+        verb = ("זינקה" if ch >= 8 else "עלתה") if ch >= 0 else ("צנחה" if ch <= -8 else "ירדה")
+        return {"big": _pct(ch), "color": render.GREEN if ch >= 0 else render.RED, "badge": stock["ticker"],
+                "line": f"{stock.get('name') or stock['ticker']} {verb} השבוע", "ask": "מה קורה?"}
+    if show == "premarket" and m:
+        es = next((o for o in m.get("overview", []) if o.get("symbol") == "ES=F"), None)
+        if es and es.get("pct") is not None:
+            return {"big": _pct(es["pct"]), "color": render.GREEN if es["pct"] >= 0 else render.RED,
+                    "badge": "חוזה S&P 500", "line": title}
+    if first.get("big"):  # the close and הידעת? open on a fact slide with its number
+        big = first["big"]
+        line = title[len(big):].strip() if title.startswith(big) else title  # no "97%" twice
+        return {"big": big, "color": _tone(big), "badge": "S&P 500" if show == "close" else None, "line": line}
+    if show == "lesson":
+        import re
+        word = re.search(r"\b[A-Z][A-Z/]{1,5}\b", title)
+        return {"big": word.group(0) if word else f"#{sc.get('number')}", "color": render.ACCENT, "line": title}
+    return {"line": title}
+
+
 def story_clips(stock, picked, out_dir, sc=None):
     """Each Story as a short animated clip: the slide builds in, the cover slowly pushes in.
     The Reel's opening slide keeps its AI picture as a Story too."""
@@ -269,10 +303,12 @@ def main():
             print(f"[aiart] skipped: {e.__class__.__name__}: {e}")
         video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
-        sub = {"hot": f"{stock.get('ticker')} · המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
+        sub = {"hot": f"המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
                "close": f"סיכום היום · פרק {ep}"}[args.show]
-        render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub).save(out_dir / "cover.png")
+        spec = cover_spec(args.show, stock, sc, m if args.show in ("premarket", "close") else None)
+        render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub, **spec).save(
+            out_dir / "cover.png")
         sc["caption"] = polish_caption(sc["caption"])
     (out_dir / "caption.txt").write_text(sc["caption"])
     (out_dir / "script.json").write_text(json.dumps(sc, ensure_ascii=False, indent=2))
@@ -290,6 +326,8 @@ def main():
             rid = instagram._create_release(f"preview-{args.show}-{dt.datetime.now():%Y%m%d-%H%M}")
             for f in ([video] if video else []) + clips:
                 print(f"[preview] {instagram._upload_asset(rid, str(f), Path(f).name, 'video/mp4')}")
+            if (out_dir / "cover.png").exists():
+                print(f"[preview] {instagram._upload_asset(rid, str(out_dir / 'cover.png'), 'cover.png', 'image/png')}")
         print("[upload] skipped")
         return
     from stockreels import instagram

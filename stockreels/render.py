@@ -626,16 +626,61 @@ def slide_bars(d, sl):
     return img
 
 
-def cover(d, title, sub=""):
-    """Reel cover: big hook inside the 3:4 area Instagram shows on the profile grid."""
-    img, dr = base({**d, "market": d.get("market")}, "")
-    lines = wrap(title, 104, W - 140)[:4]
-    y = 960 - len(lines) * 62
-    for line in lines:
-        rtl_text(dr, (W // 2, y), line, 104, WHITE, anchor="ma")
-        y += 124
+def _fit(text, size, max_w, low=40):
+    while font(size).getlength(_visual(text)) > max_w and size > low:
+        size -= 6
+    return size
+
+
+def _glow_text(img, xy, text, size, color, blur=28):
+    """Text with a soft halo of its own colour behind it."""
+    from PIL import ImageFilter
+    layer = Image.new("RGBA", img.size, (0, 0, 0, 0))
+    ImageDraw.Draw(layer).text(xy, text, font=font(size), fill=tuple(color) + (200,), anchor="mm")
+    layer = layer.filter(ImageFilter.GaussianBlur(blur))
+    img.paste(layer, (0, 0), layer)
+    ImageDraw.Draw(img).text(xy, text, font=font(size), fill=color, anchor="mm")
+
+
+def _vignette(img, strength=0.75):
+    from PIL import ImageFilter
+    mask = Image.new("L", (W, H), 0)
+    ImageDraw.Draw(mask).ellipse([-260, -60, W + 260, H + 60], fill=255)
+    mask = mask.filter(ImageFilter.GaussianBlur(160))
+    return Image.composite(img, Image.blend(img, Image.new("RGB", (W, H)), strength), mask)
+
+
+def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=None):
+    """Reel cover, "big number" style (Chen's pick, 2026-10-21): the headline number huge and coloured,
+    a gold badge above it and the hook under it, all inside the 3:4 area the profile grid shows
+    (y 240 to 1680), over the day's AI picture when there is one."""
+    bg = d.get("bg")
+    img, dr = base({**d, "bg": _vignette(bg) if bg is not None else None, "kicker": None}, "")
+    if not big:  # nothing to put big: the headline itself, large
+        lines = wrap(line or title, 112, W - 140)[:4]
+        y = 930 - len(lines) * 66
+        for ln in lines:
+            rtl_text(dr, (W // 2, y), ln, 112, WHITE, anchor="ma")
+            y += 132
+        if sub:
+            rtl_text(dr, (W // 2, y + 30), sub, 52, ACCENT, anchor="ma")
+        return img
+    if badge:  # keep a Latin name with a number ("S&P 500") in its own order inside Hebrew
+        badge = re.sub(r"[A-Za-z][A-Za-z0-9&./]*(?: [A-Za-z0-9&./]+)+", lambda m: "\u2066" + m.group(0) + "\u2069", badge)
+        size = _fit(badge, 78, 700)
+        tw = font(size).getlength(_visual(badge)) + 80
+        dr.rounded_rectangle([(W - tw) / 2, 330, (W + tw) / 2, 450], 60, fill=ACCENT)
+        rtl_text(dr, (W // 2, 390), badge, size, INK, anchor="mm")
+    _glow_text(img, (W // 2, 790), big, _fit(big, 330, W - 100), tuple(color or ACCENT))
+    dr = ImageDraw.Draw(img)
+    y = 1030
+    for ln in wrap(line or title, 92, W - 140)[:2]:
+        rtl_text(dr, (W // 2, y), ln, 92, WHITE, anchor="ma")
+        y += 112
+    if ask:
+        rtl_text(dr, (W // 2, y + 6), ask, 92, ACCENT, anchor="ma")
     if sub:
-        rtl_text(dr, (W // 2, y + 30), sub, 52, ACCENT, anchor="ma")
+        rtl_text(dr, (W // 2, 1560), sub, 46, ACCENT, anchor="ma")
     return img
 
 
