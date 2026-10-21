@@ -45,6 +45,20 @@ def fetch_profile_picture(dest):
         f.write(img.content)
 
 
+def list_media(limit=200):
+    """Everything on the account, newest first: id, type, caption, time, link, thumbnail. Read-only."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    url = f"https://{HOST}/{VERSION}/{user_id}/media"
+    params = {"fields": "id,media_type,media_product_type,caption,timestamp,permalink,thumbnail_url",
+              "limit": 50, "access_token": token}
+    out = []
+    while url and len(out) < limit:
+        page = _check(requests.get(url, params=params, timeout=30))
+        out += page.get("data", [])
+        url, params = page.get("paging", {}).get("next"), None
+    return out
+
+
 def refresh_token():
     """Exchange the current long-lived token for a fresh 60-day one (Instagram Login only).
 

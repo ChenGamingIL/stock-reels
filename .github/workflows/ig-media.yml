@@ -1,0 +1,37 @@
+name: List Instagram posts
+
+# Read-only: lists the account's posts (captions, times, links) and attaches the list to a release,
+# for redoing covers or checking what went up. Run by hand only.
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  list:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests pillow
+      - env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GRAPH_HOST: ${{ vars.GRAPH_HOST }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          python - <<'PY'
+          import datetime as dt, json
+          from stockreels import instagram
+          media = instagram.list_media()
+          print(f"[media] {len(media)} posts")
+          for m in media:
+              print(m["timestamp"], m.get("media_product_type"), (m.get("caption") or "").split("\n")[0][:90])
+          open("media.json", "w").write(json.dumps(media, ensure_ascii=False, indent=1))
+          rid = instagram._create_release(f"media-list-{dt.datetime.now():%Y%m%d-%H%M}")
+          print(instagram._upload_asset(rid, "media.json", "media.json", "application/json"))
+          PY
