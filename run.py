@@ -82,7 +82,7 @@ def story_clips(stock, picked, out_dir):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "didyouknow", "close", "shabbat"], default="hot")
+    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "didyouknow", "close", "shabbat", "week"], default="hot")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
@@ -136,6 +136,29 @@ def main():
             posted = ROOT / "posted.json"
             done = json.loads(posted.read_text()) if posted.exists() else {}
             done["shabbat"] = (candles or dt.datetime.now()).date().isoformat()
+            posted.write_text(json.dumps(done, indent=2))
+        return
+
+    if args.show == "week":  # after Shabbat: a good and green week (Chen)
+        from stockreels import shabbat
+        posted = ROOT / "posted.json"
+        done = json.loads(posted.read_text()) if posted.exists() else {}
+        key = dt.date.today().isoformat()
+        if args.when_due:
+            havdalah = shabbat.week_due()
+            if not havdalah or done.get("week") == havdalah.date().isoformat():
+                print(f"[week] not due now ({'already posted' if havdalah else 'outside the window'})")
+                return
+            key = havdalah.date().isoformat()
+        out_dir = ROOT / "output" / f"{dt.date.today().isoformat()}_WEEK"
+        out_dir.mkdir(parents=True, exist_ok=True)
+        card = out_dir / "week.png"
+        render.week_card().save(card)
+        print(f"[week] {card}")
+        if posting:
+            from stockreels import instagram
+            print(f"[upload] published week story {instagram.publish_story_slides([card], f'week-{dt.datetime.now():%Y%m%d-%H%M}')}")
+            done["week"] = key
             posted.write_text(json.dumps(done, indent=2))
         return
 

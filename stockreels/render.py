@@ -766,6 +766,34 @@ def shabbat_card(parasha=None, candles=None, havdalah=None, chag=False):
     return img
 
 
+def week_card():
+    """Story after Shabbat ends: green candles climbing, a good and green week to everyone."""
+    img = Image.new("RGB", (W, H))
+    px = ImageDraw.Draw(img)
+    for y in range(H):
+        t = y / H
+        px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
+    from PIL import ImageFilter
+    glow = Image.new("RGBA", (W, H), (0, 0, 0, 0))
+    ImageDraw.Draw(glow).ellipse([W // 2 - 380, 380, W // 2 + 380, 980], fill=(52, 199, 106, 70))
+    glow = glow.filter(ImageFilter.GaussianBlur(90))
+    img.paste(glow, (0, 0), glow)
+    dr = ImageDraw.Draw(img)
+    # five candles, each closing higher than the last
+    lows = [880, 820, 760, 690, 610]
+    for i, low in enumerate(lows):
+        cx = 250 + i * 145
+        top, bottom = low - 190 - i * 18, low
+        dr.line([(cx, top - 45), (cx, bottom + 40)], fill=GREEN, width=6)
+        dr.rounded_rectangle([cx - 38, top, cx + 38, bottom], 8, fill=GREEN)
+    dr.line([(170, 960), (W - 170, 960)], fill=GOLD_DARK, width=3)
+    rtl_text(dr, (W // 2, 1040), "שבוע טוב", 150, ACCENT, anchor="ma")
+    rtl_text(dr, (W // 2, 1230), "וירוק לכולם!", 110, GREEN, anchor="ma")
+    rtl_text(dr, (W // 2, 1420), "נתראה מחר ב-08:00 עם המניה החמה", 46, WHITE, anchor="ma")
+    paste_logo(img, ((W - 170) // 2, 1640), 170)
+    return img
+
+
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro, "news": slide_news, "analysts": slide_analysts,

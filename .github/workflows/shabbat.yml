@@ -1,14 +1,21 @@
 name: Shabbat Shalom story
+run-name: "${{ inputs.show || 'shabbat' }}"
 
-# Chen: the Shabbat Shalom (or Chag Sameach) Story goes up half an hour before candle lighting.
+# Chen: the Shabbat Shalom (or Chag Sameach) Story goes up half an hour before candle lighting,
+# and a "good and green week" Story (show=week) 15 minutes after Shabbat ends.
 # Candle lighting moves through the year, so this checks every 10 minutes in the afternoon
 # window (UTC) and posts only when Hebcal's Tel Aviv time is 8-40 minutes away; posted.json
 # keeps it to one Story per Shabbat or Yom Tov.
 on:
   schedule:
-    - cron: "*/10 12-16 * * *"
+    - cron: "*/10 12-17 * * *"
   workflow_dispatch:
     inputs:
+      show:
+        description: "shabbat (before candle lighting) or week (after Shabbat)"
+        type: choice
+        options: [shabbat, week]
+        default: shabbat
       dry_run:
         description: "Only report whether it is due"
         type: boolean
@@ -32,17 +39,27 @@ jobs:
           python-version: "3.12"
       - name: Due now?
         id: due
+        env:
+          SHOW: ${{ inputs.show }}
         run: |
           pip install -q requests
           python - <<'PY'
           import json, os, datetime as dt
           from stockreels import shabbat
-          due = shabbat.story_due()
           done = json.load(open("posted.json")) if os.path.exists("posted.json") else {}
-          key = (due[0] if due and due[0] else dt.datetime.now(shabbat.IL)).date().isoformat()
-          go = bool(due) and done.get("shabbat") != key
-          print(f"due={due} posted={done.get('shabbat')} -> {go}")
-          open(os.environ["GITHUB_OUTPUT"], "a").write(f"go={'true' if go else 'false'}\n")
+          wanted = os.environ.get("SHOW") or ""
+          show, go = wanted or "shabbat", False
+          if wanted in ("", "shabbat"):
+              due = shabbat.story_due()
+              key = (due[0] if due and due[0] else dt.datetime.now(shabbat.IL)).date().isoformat()
+              go = bool(due) and done.get("shabbat") != key
+              print(f"shabbat due={due} posted={done.get('shabbat')} -> {go}")
+          if not go and wanted in ("", "week"):
+              havdalah = shabbat.week_due()
+              go = bool(havdalah) and done.get("week") != havdalah.date().isoformat()
+              show = "week" if go or wanted else show
+              print(f"week due={havdalah} posted={done.get('week')} -> {go}")
+          open(os.environ["GITHUB_OUTPUT"], "a").write(f"go={'true' if go else 'false'}\nshow={show}\n")
           PY
       - name: Install system packages
         if: steps.due.outputs.go == 'true' && inputs.dry_run != true
@@ -63,13 +80,13 @@ jobs:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           pip install -q -r requirements.txt
-          python run.py --show shabbat --when-due
+          python run.py --show ${{ steps.due.outputs.show }} --when-due
       - name: Remember it was posted
         if: steps.due.outputs.go == 'true' && inputs.dry_run != true
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"
           git add posted.json
-          if git commit -m "shabbat story: $(date +%F)"; then
+          if git commit -m "${{ steps.due.outputs.show }} story: $(date +%F)"; then
             for i in 1 2 3; do git pull --rebase -q origin main && git push && break; sleep 5; done
           fi

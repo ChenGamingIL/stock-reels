@@ -90,3 +90,31 @@ def story_due(now=None, early=dt.timedelta(minutes=40), late=dt.timedelta(minute
                 return candles, havdalah, parasha, False
             return candles, havdalah, chag or parasha, bool(chag)
     return None
+
+
+WEEK_AFTER = dt.timedelta(minutes=15)  # Chen: a "good and green week" Story a little after Shabbat ends
+
+
+def recent_windows(now):
+    """Windows from Hebcal asked about yesterday and today, so a Shabbat that just ended is still in the list."""
+    seen = {}
+    for day in (now - dt.timedelta(days=1), now):
+        for w in week_times(day)[0]:
+            seen[w[1]] = w
+    return sorted(seen.values())
+
+
+def week_due(now=None, early=dt.timedelta(minutes=5), late=dt.timedelta(minutes=45)):
+    """Havdalah of the Shabbat that just ended, if the good-week Story is due now (15 to 60 minutes after); else None.
+    Only after Shabbat: when Yom Tov follows, the window runs on and its havdalah isn't on a Saturday."""
+    now = now or dt.datetime.now(IL)
+    try:
+        windows = recent_windows(now)
+    except Exception as e:
+        print(f"[shabbat] Hebcal unavailable ({e.__class__.__name__}), no good-week Story")
+        return None
+    for _candles, havdalah in windows:
+        at = havdalah + WEEK_AFTER
+        if havdalah.weekday() == 5 and at - early <= now < at + late:
+            return havdalah
+    return None

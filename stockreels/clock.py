@@ -26,6 +26,7 @@ SLOTS = [(IL, (8, 0), "hot", 6, None), (IL, (12, 30), "didyouknow", 4, None), (I
          (NY, (8, 30), "premarket", 0.9, range(5)), (NY, (9, 45), "open", 2, range(5)),
          (NY, (16, 15), "close", 3, range(5))]
 SHABBAT_GRACE = 25 / 60  # shabbat.story_due accepts up to 8 minutes before candle lighting
+WEEK_GRACE = 40 / 60  # shabbat.week_due accepts up to 60 minutes after havdalah
 _hebcal = []
 
 
@@ -41,9 +42,11 @@ def slots(now):
     try:
         from stockreels import shabbat
         if not _hebcal or now - _hebcal[0] > dt.timedelta(hours=1):  # the loop wakes every 5 minutes
-            _hebcal[:] = [now, shabbat.week_times(now.astimezone(IL))[0]]
-        for candles, _havdalah in _hebcal[1]:
+            _hebcal[:] = [now, shabbat.recent_windows(now.astimezone(IL))]
+        for candles, havdalah in _hebcal[1]:
             out.append((candles - shabbat.STORY_BEFORE, "shabbat", SHABBAT_GRACE, candles.date().isoformat()))
+            if havdalah.weekday() == 5:  # a good-week Story after Shabbat (not after a Yom Tov that ends midweek)
+                out.append((havdalah + shabbat.WEEK_AFTER, "week", WEEK_GRACE, havdalah.date().isoformat()))
     except Exception as e:  # shabbat.yml's own 10-minute check still covers it
         print(f"[clock] no Hebcal times ({e.__class__.__name__}: {e})")
     return sorted(out)
@@ -81,12 +84,12 @@ def dispatch(workflow, inputs):
 
 
 def workflow_of(show):
-    return "shabbat.yml" if show == "shabbat" else "daily-reel.yml"
+    return "shabbat.yml" if show in ("shabbat", "week") else "daily-reel.yml"
 
 
 def fire(show):
-    if show == "shabbat":
-        return dispatch("shabbat.yml", {"dry_run": "false"})
+    if show in ("shabbat", "week"):
+        return dispatch("shabbat.yml", {"dry_run": "false", "show": show})
     return dispatch("daily-reel.yml", {"show": show})
 
 
@@ -101,7 +104,7 @@ def find_run(show, since):
     runs = gh_json(f"repos/{REPO}/actions/workflows/{workflow_of(show)}/runs?event=workflow_dispatch&per_page=20")
     ids = [r["id"] for r in runs.get("workflow_runs", [])
            if dt.datetime.fromisoformat(r["created_at"].replace("Z", "+00:00")) >= since
-           and (show == "shabbat" or r.get("display_title", "").split(" ")[0] == show)]
+           and r.get("display_title", "").split(" ")[0] == show]
     return max(ids) if ids else None
 
 
