@@ -59,6 +59,27 @@ def list_media(limit=200):
     return out
 
 
+def media_stats(media_id):
+    """Likes, comments and the Reel's insights (views, reach, saves, shares) for one post. Read-only."""
+    token = os.environ["IG_ACCESS_TOKEN"]
+    base = f"https://{HOST}/{VERSION}/{media_id}"
+    out = _check(requests.get(base, params={"fields": "timestamp,like_count,comments_count,permalink",
+                                            "access_token": token}, timeout=30))
+    try:
+        ins = _check(requests.get(f"{base}/insights", params={"metric": "views,reach,saved,shares",
+                                                              "access_token": token}, timeout=30))
+        out.update({m["name"]: m["values"][0]["value"] for m in ins.get("data", [])})
+    except RuntimeError as e:
+        out["insights_error"] = str(e)[:200]
+    return out
+
+
+def delete_media(media_id):
+    """Remove one post from the account. Can't be undone."""
+    return _check(requests.delete(f"https://{HOST}/{VERSION}/{media_id}",
+                                  params={"access_token": os.environ["IG_ACCESS_TOKEN"]}, timeout=30))
+
+
 def refresh_token():
     """Exchange the current long-lived token for a fresh 60-day one (Instagram Login only).
 

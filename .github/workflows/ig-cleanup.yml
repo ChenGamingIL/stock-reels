@@ -1,0 +1,41 @@
+name: Instagram post stats and cleanup
+
+# Shows likes, views, saves and shares for the given posts; with action=delete it also removes them
+# (for duplicates, only when Chen asks). Run by hand only.
+on:
+  workflow_dispatch:
+    inputs:
+      ids:
+        description: "Post ids, comma separated"
+        required: true
+      action:
+        description: "stats only, or delete the posts"
+        type: choice
+        options: [stats, delete]
+        default: stats
+
+jobs:
+  cleanup:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: pip install -q requests
+      - env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GRAPH_HOST: ${{ vars.GRAPH_HOST }}
+          IDS: ${{ inputs.ids }}
+          ACTION: ${{ inputs.action }}
+        run: |
+          python - <<'PY'
+          import json, os
+          from stockreels import instagram
+          for mid in [i.strip() for i in os.environ["IDS"].split(",") if i.strip()]:
+              print("[stats]", mid, json.dumps(instagram.media_stats(mid), ensure_ascii=False))
+              if os.environ["ACTION"] == "delete":
+                  print("[delete]", mid, instagram.delete_media(mid))
+          PY
