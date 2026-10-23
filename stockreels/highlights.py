@@ -98,6 +98,37 @@ def _icon(dr, key, cx, cy):
         dr.ellipse([cx - 190, cy - 190, cx + 190, cy + 190], outline=g, width=14)
         dr.line([(cx, cy), (cx, cy - 120)], fill=g, width=16)
         dr.line([(cx, cy), (cx + 90, cy + 40)], fill=g, width=16)
+    # one cover per daily series, for the highlights Chen keeps of each show
+    elif key == "hot":  # a flame: a teardrop with its tip leaning, and a dark core
+        import math
+
+        def drop(w, h, y0, lean):
+            pts = []
+            for k in range(120):
+                t = 2 * math.pi * k / 120
+                x = w * math.sin(t) * math.sin(t / 2) ** 1.6 + lean * max(math.cos(t), 0) ** 3
+                pts.append((cx + x, y0 - h * math.cos(t)))
+            return pts
+        dr.polygon(drop(165, 215, cy + 20, 40), fill=g)
+        dr.polygon(drop(75, 105, cy + 105, 18), fill=(20, 16, 9))
+    elif key == "premarket":  # a bell
+        dr.pieslice([cx - 150, cy - 190, cx + 150, cy + 110], 180, 360, fill=g)
+        dr.polygon([(cx - 150, cy - 40), (cx + 150, cy - 40), (cx + 190, cy + 110), (cx - 190, cy + 110)], fill=g)
+        dr.rounded_rectangle([cx - 210, cy + 100, cx + 210, cy + 140], 16, fill=g)
+        dr.ellipse([cx - 40, cy + 140, cx + 40, cy + 220], fill=g)
+        dr.ellipse([cx - 22, cy - 230, cx + 22, cy - 186], fill=g)
+    elif key == "didyouknow":  # a light bulb
+        dr.ellipse([cx - 150, cy - 230, cx + 150, cy + 70], outline=g, width=14)
+        dr.rectangle([cx - 70, cy + 60, cx + 70, cy + 75], fill=(20, 16, 9))
+        for i in range(3):
+            dr.rounded_rectangle([cx - 75, cy + 70 + i * 45, cx + 75, cy + 100 + i * 45], 10, fill=g)
+        dr.line([(cx, cy + 40), (cx, cy - 60), (cx - 40, cy - 100)], fill=g, width=12)
+        dr.line([(cx, cy - 60), (cx + 40, cy - 100)], fill=g, width=12)
+    elif key == "question":
+        dr.text((cx, cy), "?", font=R.font(420), fill=g, anchor="mm")
+    elif key == "close":  # a crescent moon over the closing bell's day
+        dr.ellipse([cx - 190, cy - 190, cx + 190, cy + 190], fill=g)
+        dr.ellipse([cx - 110, cy - 250, cx + 250, cy + 110], fill=(20, 16, 9))
 
 
 def cover(key, path):
