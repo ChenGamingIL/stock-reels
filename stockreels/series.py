@@ -10,6 +10,7 @@ SHOWS = {
     "lesson": "שוק ההון מאפס",
     "didyouknow": "הידעת?",
     "close": "סיכום היום",
+    "question": "שאלה של היום",
 }
 
 

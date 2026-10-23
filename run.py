@@ -1,9 +1,9 @@
 """Daily pipeline: data -> script -> narration + video -> Instagram Reel + Story slides.
 
-Three shows a day (Israel time): 08:00 hot stock, 15:30 pre-market review with a swing
-setup, 20:00 basics lesson.
+Shows (Israel time): 08:00 hot stock, 12:30 הידעת?, 15:30 pre-market review with a swing setup,
+18:00 question of the day, 20:00 basics lesson, and the evening recap after the US close.
 
-  python run.py --show premarket # pick the show: hot (default), premarket, lesson
+  python run.py --show premarket # pick the show: hot (default), premarket, lesson, question...
 
   python run.py                  # full run, uploads to Instagram
   python run.py --dry-run        # build the video only
@@ -44,7 +44,7 @@ def polish_caption(caption, max_tags=5):
 # Instagram cuts reach for accounts posting more than ~4-5 Stories a day, so each show
 # posts only its strongest slide(s): 1 + 2 + 1 + 1 = 5 a day (the lesson lives in the feed).
 STORY_KINDS = {"hot": ["cover"], "premarket": ["tiles", "setup"], "open": ["tiles"],
-               "close": ["bars", "tiles"], "lesson": [], "didyouknow": []}
+               "close": ["bars", "tiles"], "lesson": [], "didyouknow": [], "question": []}
 
 
 def pick_story_slides(show, sc, out_dir):
@@ -87,6 +87,8 @@ def cover_spec(show, stock, sc, m=None):
         if es and es.get("pct") is not None:
             return {"big": _pct(es["pct"]), "color": render.GREEN if es["pct"] >= 0 else render.RED,
                     "badge": "חוזה S&P 500", "line": title}
+    if show == "question":
+        return {"big": sc.get("big") or "?", "color": render.ACCENT, "badge": "שאלה של היום", "line": title}
     if first.get("big"):  # the close and הידעת? open on a fact slide with its number
         big = first["big"]
         line = title[len(big):].strip() if title.startswith(big) else title  # no "97%" twice
@@ -119,7 +121,8 @@ def story_clips(stock, picked, out_dir, sc=None):
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--dry-run", action="store_true")
-    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "didyouknow", "close", "shabbat", "week"], default="hot")
+    ap.add_argument("--show", choices=["hot", "premarket", "open", "lesson", "didyouknow", "question", "close", "shabbat",
+                                       "week"], default="hot")
     ap.add_argument("--ticker")
     ap.add_argument("--sample", action="store_true")
     ap.add_argument("--story-only", action="store_true", help="post only the Story slides, no Reel")
@@ -279,6 +282,11 @@ def main():
             sc = didyouknow.script(ep)
             name = f"DYK{ep}"
             stock = {"ticker": "הידעת?", "market": market}
+        elif args.show == "question":
+            from stockreels import questions
+            sc = questions.script(ep)
+            name = f"Q{ep}"
+            stock = {"ticker": "Q&A", "market": market}
         else:
             sc = shows.lesson_script(episode=ep)
             name = f"LESSON{sc['number']}"
@@ -305,7 +313,7 @@ def main():
         first = sc["slides"][0]
         sub = {"hot": f"המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
-               "close": f"סיכום היום · פרק {ep}"}[args.show]
+               "close": f"סיכום היום · פרק {ep}", "question": f"#{ep} · כל יום ב-18:00"}[args.show]
         spec = cover_spec(args.show, stock, sc, m if args.show in ("premarket", "close") else None)
         render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub, **spec).save(
             out_dir / "cover.png")

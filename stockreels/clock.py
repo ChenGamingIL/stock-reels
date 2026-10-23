@@ -22,7 +22,8 @@ REPO = os.environ.get("GITHUB_REPOSITORY", "ChenGamingIL/stock-reels")
 
 # (clock, time, show, hours it may still go out late, weekdays or None for every day).
 # Market shows follow New York, so they keep their place around the bell when only one country changed clocks.
-SLOTS = [(IL, (8, 0), "hot", 6, None), (IL, (12, 30), "didyouknow", 4, None), (IL, (20, 0), "lesson", 3, None),
+SLOTS = [(IL, (8, 0), "hot", 6, None), (IL, (12, 30), "didyouknow", 4, None), (IL, (18, 0), "question", 3, None),
+         (IL, (20, 0), "lesson", 3, None),
          (NY, (8, 30), "premarket", 0.9, range(5)), (NY, (9, 45), "open", 2, range(5)),
          (NY, (16, 15), "close", 3, range(5))]
 SHABBAT_GRACE = 25 / 60  # shabbat.story_due accepts up to 8 minutes before candle lighting

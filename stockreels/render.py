@@ -48,8 +48,9 @@ def font(size):
     return _FONTS[size]
 
 
-# dates and clock times first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200"
-NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|\d{1,2}:\d{2}|(?:(?<![\u0590-\u05ff])[-+])?\$?\d[\d,.]*[%BMTx]?")
+# dates and clock times first; a sign only counts when it isn't a Hebrew prefix hyphen like "ו-200";
+# "#12" and "$5" keep their mark on the left of the number
+NUM_RE = re.compile(r"\d{4}-\d{2}(?:-\d{2})?|\d{1,2}:\d{2}|(?:(?<![\u0590-\u05ff])[-+])?[$#]?\d[\d,.]*[%BMTx]?")
 
 LATIN_RUN = re.compile(r"[A-Za-z][A-Za-z0-9&./'-]*(?: [A-Za-z0-9&./'-]+)+")
 
@@ -781,8 +782,25 @@ def slide_lesson(d, sl):
         y += 84
     if sl.get("visual"):
         draw_visual(img, dr, sl["visual"], max(y + 60, 960))
-    else:
-        paste_logo(img, ((W - 300) // 2, 1150), 300)
+    elif max(1150, y + 60) + 300 <= CONTENT_BOTTOM:  # the logo only where the text leaves room
+        paste_logo(img, ((W - 300) // 2, max(1150, y + 60)), 300)
+    return img
+
+
+def slide_question(d, sl):
+    """The question of the day: a big glowing question mark (or the topic's word) over the question."""
+    img, dr = base(d, "")
+    big = sl.get("big") or "?"
+    _glow_text(img, (W // 2, 600), big, _fit(big, 300, W - 160), ACCENT)
+    dr = ImageDraw.Draw(img)
+    size = 84
+    while len(wrap(sl["title"], size, W - 140)) > 3 and size > 64:
+        size -= 4
+    y = 860
+    for ln in wrap(sl["title"], size, W - 140)[:3]:
+        rtl_text(dr, (W // 2, y), ln, size, WHITE, anchor="ma")
+        y += size + 22
+    rtl_text(dr, (W // 2, y + 36), "התשובה בפחות מדקה", 46, MUTED, anchor="ma")
     return img
 
 
@@ -852,7 +870,7 @@ def week_card():
 RENDERERS = {"intro": slide_intro, "tiles": slide_tiles, "movers": slide_movers,
              "setup": slide_setup, "bars": slide_bars, "lesson": slide_lesson,"hook": slide_hook, "chart": slide_chart, "table": slide_table, "earnings": slide_earnings,
              "bullets": slide_bullets, "outro": slide_outro, "news": slide_news, "analysts": slide_analysts,
-             "proscons": slide_proscons, "track": slide_track, "fact": slide_fact}
+             "proscons": slide_proscons, "track": slide_track, "fact": slide_fact, "question": slide_question}
 
 
 HEBREW = re.compile(r"[\u0590-\u05ff]")

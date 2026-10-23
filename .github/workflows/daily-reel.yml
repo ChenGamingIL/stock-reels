@@ -2,7 +2,7 @@ name: Daily stock reel
 run-name: "${{ inputs.show }} ${{ inputs.dry_run && '(dry run)' || '' }}"
 
 # Started by clock.yml at each slot (GitHub's own cron was too unreliable):
-# 08:00 hot stock, 12:30 "did you know", 20:00 lesson (Israel time); pre-market 08:30, open 09:45 and
+# 08:00 hot stock, 12:30 "did you know", 18:00 question of the day, 20:00 lesson (Israel time); pre-market 08:30, open 09:45 and
 # close 16:15 New York time, Mon-Fri. The Shabbat Shalom Story is shabbat.yml.
 # Nothing posts between candle lighting and havdalah (stockreels/shabbat.py).
 on:
@@ -11,7 +11,7 @@ on:
       show:
         description: "Which show"
         type: choice
-        options: [hot, didyouknow, premarket, open, lesson, close, shabbat]
+        options: [hot, didyouknow, question, premarket, open, lesson, close, shabbat]
         default: hot
       ticker:
         description: "Force a ticker (optional)"
@@ -136,7 +136,7 @@ jobs:
           path: output/
           retention-days: 14
       - name: Remember the episode, today's ticker and today's pattern
-        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson","didyouknow","close"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
+        if: ${{ steps.gate.outputs.run == 'true' && contains(fromJSON('["hot","premarket","lesson","didyouknow","question","close"]'), steps.gate.outputs.show) && !inputs.highlights && inputs.dry_run != true && inputs.check_instagram != true && inputs.fetch_logo != true && inputs.story_only != true }}
         run: |
           git config user.name "stock-reels-bot"
           git config user.email "actions@users.noreply.github.com"

@@ -104,6 +104,9 @@ SHOW = {
     "didyouknow": ["an old library with tall shelves and a globe",
                    "an antique ticker tape machine in a dark room",
                    "old banknotes and gold coins on dark wood"],
+    "question": ["a brass magnifying glass over financial newspapers on a dark desk",
+                 "a silhouette of a person by a tall window overlooking a city at night",
+                 "a single desk lamp lighting an open notebook in a dark study"],
     "hot": ["a bronze charging bull statue on a New York street at night"],
 }
 
