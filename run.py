@@ -42,9 +42,11 @@ def polish_caption(caption, max_tags=5):
 
 
 # Instagram cuts reach for accounts posting more than ~4-5 Stories a day, so each show
-# posts only its strongest slide(s): 1 + 2 + 1 + 1 = 5 a day (the lesson lives in the feed).
+# posts only its strongest slide(s): hot 1 + premarket 2 + open 1 + question 1 = 5 a day. The question's
+# cover goes up as a Story so Chen can keep it in a highlight (2026-10-23); the evening recap gave up its
+# Story for it and lives in the feed, like the lesson and הידעת?.
 STORY_KINDS = {"hot": ["cover"], "premarket": ["tiles", "setup"], "open": ["tiles"],
-               "close": ["bars", "tiles"], "lesson": [], "didyouknow": [], "question": []}
+               "close": [], "lesson": [], "didyouknow": [], "question": ["cover"]}
 
 
 def pick_story_slides(show, sc, out_dir):
@@ -59,8 +61,6 @@ def pick_story_slides(show, sc, out_dir):
         elif k in kinds:
             i = kinds.index(k)
             picked.append((out_dir / f"slide_{i}.png", sc["slides"][i]))
-        if show == "close" and picked:
-            break  # sectors if we have them, otherwise the index tiles
     return picked
 
 
