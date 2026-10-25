@@ -20,11 +20,28 @@ TAPE_SPEED = 70    # px per second
 COUNT_TIME = 1.0   # seconds a headline number takes to count up
 OUT_LIFT = 34      # px the content drifts up as it leaves
 FIRST_SHIFT = 0.45  # the first slide starts part way into its build-in, so the very first frame already hooks
+# The camera: once a slide has built in, it moves from one piece of content to the next, so the picture
+# changes every couple of seconds as the narration goes through it (top Reels cut every 2-3 s).
+CAM_TOP, CAM_BOTTOM = 280, 1510  # only the content area moves; the header, ticker and footer stay put
+CAP_SAFE = 1375     # captions start below this (render.CAP_TOP), so the camera frames content above it
+FEATHER = 36       # px over which content fades out as the camera lifts it past the title
+SRC_BOTTOM = 1650   # the camera may look a little past the content, at the empty frame above the footer
+CAM_MAX = 1.22      # closest the camera gets
+CAM_MOVE = 0.7      # seconds to travel from one piece to the next
+PUNCH = 0.06        # each cut lands slightly zoomed in and settles, like an editor's punch-in
+PUNCH_TIME = 0.35
+HOOK_ZOOM = 0.16    # the opening frame starts close on the headline and pulls back
+HOOK_TIME = 0.8
 
 
 def ease_out(t):
     t = min(max(t, 0.0), 1.0)
     return 1 - (1 - t) ** 3
+
+
+def ease_in_out(t):
+    t = min(max(t, 0.0), 1.0)
+    return 3 * t * t - 2 * t * t * t
 
 
 class Pieces:
@@ -88,6 +105,9 @@ class Pieces:
         if self.count and self.count_band is not None:
             return 0.1 + self.stagger * self.count_band + 0.3 * COUNT_TIME
         return min(FIRST_SHIFT, self.built_by())
+
+    def backdrop_only(self):
+        return self.coverage > 0.6
 
     def ground(self, t):
         """The empty frame at `t`: the shared chrome, over the moving picture when there is one."""
@@ -226,10 +246,118 @@ class Glow:
         img.paste(self.fill, (int(cx - self.size / 2), int(cy - self.size / 2)), self.mask)
 
 
+class Camera:
+    """Where the camera looks over a slide's content area, as [(t, zoom, x0, y0)] keyframes eased between.
+
+    The area under the slide title moves; the title, header, ticker and footer stay put. Each piece of
+    content it stops on is framed above the captions, so a caption line never hides the row being read."""
+
+    def __init__(self, pieces, dur, shift=0.0, hook=False):
+        bands = [b["box"] for b in pieces.bands if b["box"][1] < CAM_BOTTOM]  # the footer line isn't content
+        # the slide title is the first band near the top: it stays where it is
+        self.top = CAM_TOP
+        head = [b for b in bands if b[1] < 600]
+        if head and len(head) < len(bands):
+            self.top = max(CAM_TOP, max(b[3] for b in head) + 12)
+            bands = bands[len(head):]
+        self.h = CAM_BOTTOM - self.top
+        keys = [(0.0, 1.0, 0.0, self.top)]
+        self.first = bands[0][1] if bands else self.top  # the camera never lifts the first piece out of view
+        if hook and not pieces.backdrop_only():
+            if pieces.count and pieces.count_band is not None:  # start close on the counting headline number
+                keys = [(0.0,) + self._view(pieces.bands[pieces.count_band]["box"], 1 + HOOK_ZOOM),
+                        (HOOK_TIME,) + keys[0][1:]]
+            else:  # start a little close on the whole slide
+                keys = [(0.0,) + self._view((0, self.top, 2 * W_HALF, CAP_SAFE), 1 + HOOK_ZOOM / 2),
+                        (HOOK_TIME,) + keys[0][1:]]
+        self.punch = not hook
+        start = max(pieces.built_by() - shift, keys[-1][0]) + 0.25
+        end = dur - 0.35
+        targets = self._targets(pieces, bands) if end - start > 2 * CAM_MOVE else []
+        if targets:
+            hold = (end - start) / len(targets)
+            t = start
+            for z, box in targets:
+                move = min(CAM_MOVE, hold * 0.5)
+                keys.append((t,) + keys[-1][1:])
+                keys.append((t + move,) + self._view(box, z))
+                # then drift slowly closer while the narration stays on it, so the frame never sits dead still
+                keys.append((t + hold,) + self._view(box, z * (1 + 0.012 * (hold - move))))
+                t += hold
+        self.keys = keys
+
+    def _view(self, box, z):
+        """(zoom, x0, y0): the source corner that frames `box` at zoom z, moving it as little as it can
+        while keeping it between the title and the captions."""
+        x0, y0, x1, y1 = box
+        vw, vh = 2 * W_HALF / z, self.h / z
+        sx = min(max((x0 + x1) / 2 - vw / 2, 0), 2 * W_HALF - vw)
+        cy = (y0 + y1) / 2
+        sy = cy - (cy - self.top) / z  # zoom about the piece's own middle: it stays where it was
+        low = y1 - (CAP_SAFE - 12 - self.top) / z  # ...unless its bottom would sit under the captions
+        # ...or it would slide under the title, or the slide's first piece would close more than half its gap to it
+        high = min(y0 - 12 / z, self.first - max(self.first - self.top, 24) * 0.5 / z)
+        sy = max(sy, low) if low <= high else high
+        sy = min(max(sy, self.top), SRC_BOTTOM - vh)
+        return z, sx, sy
+
+    def _targets(self, pieces, bands):
+        """Up to four stops, top to bottom: neighbouring small pieces are looked at together."""
+        if pieces.coverage > 0.6 or not bands:
+            return []
+        boxes = [list(b) for b in bands if b[3] > self.top + 40]
+        while len(boxes) > 4 or (len(boxes) > 1 and any(b[3] - b[1] < 120 for b in boxes)):
+            i = min(range(len(boxes) - 1), key=lambda k: boxes[k + 1][3] - boxes[k][1])
+            a, b = boxes[i], boxes[i + 1]
+            boxes[i] = [min(a[0], b[0]), a[1], max(a[2], b[2]), b[3]]
+            del boxes[i + 1]
+        out = []
+        for box in boxes:
+            bw, bh = box[2] - box[0] + 100, box[3] - box[1] + 80
+            z = max(1.0, min(CAM_MAX, 2 * W_HALF / bw, (CAP_SAFE - self.top) / bh))
+            out.append((z, box))
+        return out
+
+    def at(self, t):
+        keys = self.keys
+        z, x0, y0 = keys[-1][1:]
+        if t <= keys[0][0]:
+            z, x0, y0 = keys[0][1:]
+        else:
+            for a, b in zip(keys, keys[1:]):
+                if a[0] <= t <= b[0]:
+                    p = ease_in_out((t - a[0]) / max(b[0] - a[0], 1e-6))
+                    z, x0, y0 = (a[i] + (b[i] - a[i]) * p for i in (1, 2, 3))
+                    break
+        if self.punch and t < PUNCH_TIME:  # zoom about the middle of the view
+            k = 1 + PUNCH * (1 - ease_out(t / PUNCH_TIME))
+            vw, vh = 2 * W_HALF / z, self.h / z
+            x0, y0, z = x0 + vw * (1 - 1 / k) / 2, y0 + vh * (1 - 1 / k) / 2, z * k
+        return z, x0, y0
+
+    def apply(self, img, ground, t):
+        """Move the slide's content (what differs from the bare `ground`) and leave the frame itself still."""
+        z, x0, y0 = self.at(t)
+        if z <= 1.001 and abs(y0 - self.top) < 0.5 and x0 < 0.5:
+            return img
+        vw, vh = 2 * W_HALF / z, self.h / z
+        size, box = (2 * W_HALF, self.h), (x0, y0, x0 + vw, y0 + vh)
+        part = img.resize(size, Image.BILINEAR, box=box)
+        under = ground.resize(size, Image.BILINEAR, box=box)
+        diff = np.asarray(ImageChops.difference(part, under).convert("L"), dtype=np.uint16)
+        alpha = np.minimum(diff * 8, 255)
+        alpha[:FEATHER] = alpha[:FEATHER] * np.linspace(0, 1, FEATHER)[:, None]  # content leaving at the top fades out
+        mask = Image.fromarray(alpha.astype(np.uint8))
+        img.paste(ground.crop((0, self.top, 2 * W_HALF, CAM_BOTTOM)), (0, self.top))
+        img.paste(part, (0, self.top), mask)
+        return img
+
+
+W_HALF = 540
 GLOW = None
 
 
-def frames(pieces, dur, tape=None, t0=0.0, fade_out=True, shift=0.0):
+def frames(pieces, dur, tape=None, t0=0.0, fade_out=True, shift=0.0, camera=None):
     """Yield every frame of one slide as raw RGB bytes. `shift` starts the build-in part way through."""
     global GLOW
     GLOW = GLOW or Glow()
@@ -240,6 +368,8 @@ def frames(pieces, dur, tape=None, t0=0.0, fade_out=True, shift=0.0):
         if fade_out and t > dur - OUT_TIME:
             fade = max(0.0, (dur - t) / OUT_TIME)
         img = pieces.frame(t + shift, fade)
+        if camera:
+            camera.apply(img, pieces.ground(t + shift), t)
         GLOW.paste(img, t0 + t)
         shine(img, t + shift)
         if tape:
