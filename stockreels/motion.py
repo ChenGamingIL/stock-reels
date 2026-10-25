@@ -282,7 +282,9 @@ class Camera:
                 keys.append((t,) + keys[-1][1:])
                 keys.append((t + move,) + self._view(box, z))
                 # then drift slowly closer while the narration stays on it, so the frame never sits dead still
-                keys.append((t + hold,) + self._view(box, z * (1 + 0.012 * (hold - move))))
+                # (but never so close that the piece's sides leave the frame)
+                fit = 2 * W_HALF / (box[2] - box[0] + 40)
+                keys.append((t + hold,) + self._view(box, max(z, min(z * (1 + 0.012 * (hold - move)), fit))))
                 t += hold
         self.keys = keys
 
