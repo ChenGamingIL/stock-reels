@@ -262,6 +262,7 @@ class Camera:
             bands = bands[len(head):]
         self.h = CAM_BOTTOM - self.top
         keys = [(0.0, 1.0, 0.0, self.top)]
+        self.span = (min(b[0] for b in bands), max(b[2] for b in bands)) if bands else (0, 2 * W_HALF)
         self.first = bands[0][1] if bands else self.top  # the camera never lifts the first piece out of view
         if hook and not pieces.backdrop_only():
             if pieces.count and pieces.count_band is not None:  # start close on the counting headline number
@@ -282,9 +283,7 @@ class Camera:
                 keys.append((t,) + keys[-1][1:])
                 keys.append((t + move,) + self._view(box, z))
                 # then drift slowly closer while the narration stays on it, so the frame never sits dead still
-                # (but never so close that the piece's sides leave the frame)
-                fit = 2 * W_HALF / (box[2] - box[0] + 40)
-                keys.append((t + hold,) + self._view(box, max(z, min(z * (1 + 0.012 * (hold - move)), fit))))
+                keys.append((t + hold,) + self._view(box, max(z, min(z * (1 + 0.012 * (hold - move)), self.zcap))))
                 t += hold
         self.keys = keys
 
@@ -293,7 +292,11 @@ class Camera:
         while keeping it between the title and the captions."""
         x0, y0, x1, y1 = box
         vw, vh = 2 * W_HALF / z, self.h / z
-        sx = min(max((x0 + x1) / 2 - vw / 2, 0), 2 * W_HALF - vw)
+        sx = (x0 + x1) / 2 - vw / 2
+        lo, hi = self.span[1] + 20 - vw, self.span[0] - 20  # keep every piece's sides in frame when it can
+        if lo <= hi:
+            sx = min(max(sx, lo), hi)
+        sx = min(max(sx, 0), 2 * W_HALF - vw)
         cy = (y0 + y1) / 2
         sy = cy - (cy - self.top) / z  # zoom about the piece's own middle: it stays where it was
         low = y1 - (CAP_SAFE - 12 - self.top) / z  # ...unless its bottom would sit under the captions
@@ -313,10 +316,12 @@ class Camera:
             a, b = boxes[i], boxes[i + 1]
             boxes[i] = [min(a[0], b[0]), a[1], max(a[2], b[2]), b[3]]
             del boxes[i + 1]
+        # never so close that the widest piece on the slide loses its sides
+        self.zcap = max(1.04, min(CAM_MAX, *(2 * W_HALF / (b[2] - b[0] + 40) for b in bands)))
         out = []
         for box in boxes:
             bw, bh = box[2] - box[0] + 100, box[3] - box[1] + 80
-            z = max(1.0, min(CAM_MAX, 2 * W_HALF / bw, (CAP_SAFE - self.top) / bh))
+            z = max(1.0, min(self.zcap, 2 * W_HALF / bw, (CAP_SAFE - self.top) / bh))
             out.append((z, box))
         return out
 
