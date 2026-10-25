@@ -1,6 +1,7 @@
 """Pick a "hot" stock for today and collect the numbers the video talks about."""
 import json
 import random
+import re
 from pathlib import Path
 
 # Large, liquid US names. The day's pick is the biggest mover among these
@@ -225,6 +226,10 @@ def with_hebrew(news):
     return news
 
 
+# quote and price pages that the news search returns as if they were headlines ("symbol_ Stock Quote Price and Forecast")
+QUOTE_PAGE = re.compile(r"stock quote|quote price|price and forecast|^symbol_|stock price today", re.I)
+
+
 def google_news(ticker, n=3, max_age_days=10, query=None):
     """Fallback headlines from Google News RSS, which names the publisher of every item."""
     import datetime as dt
@@ -252,7 +257,7 @@ def google_news(ticker, n=3, max_age_days=10, query=None):
             when = email.utils.parsedate_to_datetime(it.findtext("pubDate"))
         except Exception:
             continue
-        if not pub or not title:
+        if not pub or not title or QUOTE_PAGE.search(title):
             continue
         out.append({"title": title, "publisher": pub, "date": when.strftime("%d.%m"), "ts": when.timestamp()})
     print(f"[news] google returned {len(items)} items")
