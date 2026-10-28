@@ -30,5 +30,13 @@
     "trigger": 526.82,
     "stop": 510.26,
     "target": 559.94
+  },
+  {
+    "date": "2026-10-28",
+    "ticker": "SHOP",
+    "kind": "pullback",
+    "trigger": 171.34,
+    "stop": 159.76,
+    "target": 194.5
   }
 ]
