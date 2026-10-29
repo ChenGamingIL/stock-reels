@@ -10,6 +10,7 @@ until all 100 have gone out; then a new shuffle starts.
 """
 import random
 
+from . import cadence
 from .script import DISCLAIMER, speak
 
 SLOT = "18:00"
@@ -462,13 +463,14 @@ def script(n):
                "narration": f"שאלה של היום: {q}"}]
     for heading, text in points:
         slides.append({"kind": "lesson", "title": heading, "text": text, "narration": f"{heading}. {text}"})
-    slides.append({"kind": "outro", "title": "מחר: שאלה חדשה",
-                   "narration": "מחר שאלה חדשה. יש לכם שאלה על שוק ההון? כתבו לנו בתגובות, ועקבו כדי לא לפספס."})
+    when = cadence.next_label()
+    slides.append({"kind": "outro", "title": f"{when}: שאלה חדשה",
+                   "narration": f"{when} שאלה חדשה. יש לכם שאלה על שוק ההון? כתבו לנו בתגובות, ועקבו כדי לא לפספס."})
     for sl in slides:
         sl["narration"] = speak(sl["narration"])
     caption = (f"שאלה של היום: {q}\n"
                + " · ".join(p[0] for p in points) + "\n"
-               + f"שאלה של היום · #{n} · כל יום ב-{SLOT}\n"
+               + f"שאלה של היום · #{n} · ב-{SLOT}\n"
                + "יש לכם שאלה על שוק ההון? כתבו בתגובות 👇\n"
                + f"{DISCLAIMER}\n\n#שאלהשלהיום #שוקההון #מניות #השקעות #למתחילים")
     return {"slides": slides, "caption": caption, "number": n, "big": big}

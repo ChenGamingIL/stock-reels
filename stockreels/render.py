@@ -7,7 +7,7 @@ from pathlib import Path
 from PIL import Image, ImageDraw, ImageFont, features
 
 from .script import DISCLAIMER
-from . import motion, sound
+from . import cadence, motion, sound
 from .tts import LOUDNESS, synthesize
 
 W, H = 1080, 1920
@@ -862,7 +862,7 @@ def week_card():
     dr.line([(170, 960), (W - 170, 960)], fill=GOLD_DARK, width=3)
     rtl_text(dr, (W // 2, 1040), "שבוע טוב", 150, ACCENT, anchor="ma")
     rtl_text(dr, (W // 2, 1230), "וירוק לכולם!", 110, GREEN, anchor="ma")
-    rtl_text(dr, (W // 2, 1420), "נתראה מחר ב-08:00 עם המניה החמה", 46, WHITE, anchor="ma")
+    rtl_text(dr, (W // 2, 1420), f"נתראה {cadence.next_label()} ב-08:00 עם המניה החמה", 46, WHITE, anchor="ma")
     paste_logo(img, ((W - 170) // 2, 1640), 170)
     return img
 
