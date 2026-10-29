@@ -38,5 +38,13 @@
     "trigger": 171.34,
     "stop": 159.76,
     "target": 194.5
+  },
+  {
+    "date": "2026-10-29",
+    "ticker": "PLTR",
+    "kind": "pullback",
+    "trigger": 199.14,
+    "stop": 185.94,
+    "target": 225.54
   }
 ]
