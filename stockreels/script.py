@@ -7,6 +7,8 @@ the "why it's interesting" / "risks" bullets and the Instagram caption.
 import json
 import os
 
+from . import cadence
+
 DISCLAIMER = "אין לראות בתוכן זה ייעוץ השקעות או המלצה לקנות או למכור ניירות ערך."
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
 
@@ -219,15 +221,16 @@ def build_script(d, episode=1, kicker=None):
     slides.append({"kind": "proscons", "title": "בשורה התחתונה", "pros": pros, "cons": cons,
                    "narration": speak(("בשורה התחתונה. בעד: " + ", ".join(pros) + ". " if pros else "בשורה התחתונה. ")
                                       + "נגד: " + ", ".join(cons) + ".")})
-    slides.append({"kind": "outro", "title": f"מחר 08:00 · פרק {episode + 1}",
-                   "narration": f"זה היה פרק {episode} של המניה החמה. מחר בשמונה, פרק {episode + 1}. "
+    when = cadence.next_label()
+    slides.append({"kind": "outro", "title": f"{when} 08:00 · פרק {episode + 1}",
+                   "narration": f"זה היה פרק {episode} של המניה החמה. {when} בשמונה, פרק {episode + 1}. "
                                 "שלחו לחבר שמשקיע, ועקבו כדי לא לפספס. זה לא ייעוץ השקעות."})
     slides = [sl for sl in slides if sl["kind"] not in ("table", "earnings") or sl["rows"]]
     move = d.get("change_5d_pct") or 0
     caption = (f"{name} ({d['ticker']}) {'עלתה' if move >= 0 else 'ירדה'} {abs(move):.1f}% השבוע. "
                "מה מזיז את המניה, הדוחות, המכפילים" + (f", מה אומרים {a['count']} אנליסטים" if a.get("count") else "")
                + " ובעד ונגד במספרים.\n"
-               + f"המניה החמה · פרק {episode} · כל בוקר ב-08:00\n"
+               + f"המניה החמה · פרק {episode} · ב-08:00 בבוקר\n"
                + f"הנתונים: Yahoo Finance, נכון ל-{d.get('asof', '')}. {DISCLAIMER}\n\n"
                + f"#{d['ticker']} #מניות #שוקההון #וולסטריט #השקעות")
     return {"slides": slides, "caption": caption}

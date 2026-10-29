@@ -1,7 +1,8 @@
 """Daily pipeline: data -> script -> narration + video -> Instagram Reel + Story slides.
 
 Shows (Israel time): 08:00 hot stock, 12:30 הידעת?, 15:30 pre-market review with a swing setup,
-18:00 question of the day, 20:00 basics lesson, and the evening recap after the US close.
+18:00 question of the day, 20:00 basics lesson, and the evening recap after the US close,
+on posting days only (once every 3 days, stockreels/cadence.py).
 
   python run.py --show premarket # pick the show: hot (default), premarket, lesson, question...
 
@@ -313,7 +314,7 @@ def main():
         first = sc["slides"][0]
         sub = {"hot": f"המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
-               "close": f"סיכום היום · פרק {ep}", "question": f"#{ep} · כל יום ב-18:00"}[args.show]
+               "close": f"סיכום היום · פרק {ep}", "question": f"#{ep} · שאלה של היום"}[args.show]
         spec = cover_spec(args.show, stock, sc, m if args.show in ("premarket", "close") else None)
         render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub, **spec).save(
             out_dir / "cover.png")
