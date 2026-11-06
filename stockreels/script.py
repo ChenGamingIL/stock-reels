@@ -121,7 +121,7 @@ def _template_script(d):
     return {
         "hook": f"{name} {direction} {abs(move):.1f}% השבוע. מה קורה?",
         "narration": {
-            "hook": f"{name} {direction} {abs(move):.1f} אחוז בשבוע האחרון. בואו נבין למה כולם מדברים עליה.",
+            "hook": f"{name} {direction} {abs(move):.0f} אחוז בשבוע אחד. למה?",  # short: the opener is the hook
             "chart": f"ככה נראה המחיר בחצי השנה האחרונה: שינוי של {fmt_pct(d.get('change_6m_pct'), True)}.",
             "ratios": ratios_narration(r),
             "earnings": earn_line,
