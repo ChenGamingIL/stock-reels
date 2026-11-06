@@ -202,6 +202,50 @@ def shine(img, t, y=268, x0=60, x1=1020):
                 dr.line([(sx, y - 1), (sx + 6, y - 1)], fill=c, width=4)
 
 
+class Still:
+    """A finished full-frame picture (the Reel's clean opening hook) that moves from its very first frame:
+    it starts close and pulls back fast, then keeps creeping in, so the feed never sees a still image."""
+
+    PULL, START, CREEP = 0.7, 1.14, 0.012
+
+    def __init__(self, img):
+        self.img = img.convert("RGB")
+        self.count = None
+        self.bands = []
+        self.coverage = 1.0
+        self.backdrop = None
+
+    def built_by(self):
+        return 0.0
+
+    def hook_shift(self):
+        return 0.0
+
+    def backdrop_only(self):
+        return True
+
+    def events(self, shift=0.0):
+        return [(0.0, "riser", self.PULL), (self.PULL, "ding", None)]
+
+    def _zoom(self, t):
+        if t < self.PULL:
+            return self.START - (self.START - 1.0) * ease_out(t / self.PULL)
+        return 1.0 + self.CREEP * (t - self.PULL)
+
+    def frame(self, t, fade=1.0):
+        z = self._zoom(t)
+        w, h = self.img.size
+        vw, vh = w / z, h / z
+        box = ((w - vw) / 2, (h - vh) / 2, (w + vw) / 2, (h + vh) / 2)
+        img = self.img.resize((w, h), Image.BILINEAR, box=box)
+        if fade < 1:
+            img = Image.blend(Image.new("RGB", img.size), img, fade)
+        return img
+
+    def ground(self, t):
+        return self.frame(t)
+
+
 class Backdrop:
     """A picture behind a slide, slowly pushing in and drifting up, like a camera move."""
 
@@ -378,6 +422,9 @@ def frames(pieces, dur, tape=None, t0=0.0, fade_out=True, shift=0.0, camera=None
         if camera:
             camera.apply(img, pieces.ground(t + shift), t)
         GLOW.paste(img, t0 + t)
+        if isinstance(pieces, Still):  # the clean opener: no header rule, no ticker
+            yield img.tobytes()
+            continue
         shine(img, t + shift)
         if tape:
             tape.paste(img, t0 + t)

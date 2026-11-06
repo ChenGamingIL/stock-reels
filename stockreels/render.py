@@ -659,13 +659,35 @@ def _vignette(img, strength=0.75):
     return Image.composite(img, Image.blend(img, Image.new("RGB", (W, H)), strength), mask)
 
 
-def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=None):
+def _clean_ground(d):
+    """The opener's background: the AI picture (or the plain gradient), with no ticker, header or footer."""
+    bg = d.get("bg")
+    if bg is not None:
+        img = _vignette(bg.copy())
+    else:
+        img = Image.new("RGB", (W, H))
+        px = ImageDraw.Draw(img)
+        for y in range(H):
+            t = y / H
+            px.line([(0, y), (W, y)], fill=tuple(int(a + (b - a) * t) for a, b in zip(BG_TOP, BG_BOTTOM)))
+    dr = ImageDraw.Draw(img)
+    dr.text((W // 2, 150), f"@{BRAND.lower()}", font=font(40), fill=ACCENT, anchor="mm")
+    return img, dr
+
+
+def cover(d, title, sub="", big=None, color=None, badge=None, line=None, ask=None, clean=False):
     """Reel cover, "big number" style (Chen's pick, 2026-10-21): the headline number huge and coloured,
     a gold badge above it and the hook under it, all inside the 3:4 area the profile grid shows
-    (y 240 to 1680), over the day's AI picture when there is one."""
+    (y 240 to 1680), over the day's AI picture when there is one.
+
+    clean=True is the Reel's opening frame (2026-11-06 reach fix): the same hook with nothing else on
+    screen, because a busy first frame made viewers swipe away within 2-4 seconds."""
     bg = d.get("bg")
-    # the handle and the data line go under the disclaimer, clear of the grid's crop
-    img, dr = base({**d, "bg": _vignette(bg) if bg is not None else None, "kicker": None}, "", brand_y=H - 78)
+    if clean:
+        img, dr = _clean_ground(d)
+        sub = ""
+    else:  # the handle and the data line go under the disclaimer, clear of the grid's crop
+        img, dr = base({**d, "bg": _vignette(bg) if bg is not None else None, "kicker": None}, "", brand_y=H - 78)
     if not big:  # nothing to put big: the headline itself, large
         lines = wrap(line or title, 112, W - 140)[:4]
         y = 930 - len(lines) * 66
@@ -1043,9 +1065,14 @@ def render_video(d, script, out_dir):
         if bg is not None and i in (0, last):  # the opening and the sign-off play over the AI picture
             dd["bg"], drift = bg, motion.Backdrop(bg)
         png, mp3 = out_dir / f"slide_{i}.png", out_dir / f"slide_{i}.mp3"
+        dur, words = synthesize(sl["narration"], str(mp3))
+        if i == 0 and script.get("opener"):  # the clean hook frame instead of the busy first slide
+            full = Image.open(script["opener"]).convert("RGB")
+            full.save(png)
+            parts.append((motion.Still(full), mp3, dur + GAP, None))
+            continue
         full = RENDERERS[sl["kind"]](dd, sl)
         full.save(png)
-        dur, words = synthesize(sl["narration"], str(mp3))
         parts.append((motion.Pieces(full, chrome(dd), backdrop=drift), mp3, dur + GAP, words))
     total = sum(p[2] for p in parts)
     tape = motion.Tape(*tape_strip(d))
@@ -1054,8 +1081,9 @@ def render_video(d, script, out_dir):
         seg = out_dir / f"slide_{i}.mp4"
         caps = caption_track(words, dur, out_dir, f"s{i}") if captions and words else None
         shift = pieces.hook_shift() if i == 0 else 0.0
-        cam = motion.Camera(pieces, dur, shift, hook=i == 0) if CAMERA else None
-        _encode_slide(pieces, dur, mp3, caps, tape, offset, total, offset, seg, fade_out=i < len(parts) - 1,
+        still = isinstance(pieces, motion.Still)
+        cam = motion.Camera(pieces, dur, shift, hook=i == 0) if CAMERA and not still else None
+        _encode_slide(pieces, dur, mp3, caps, tape, offset, 0 if still else total, offset, seg, fade_out=i < len(parts) - 1,
                       shift=shift, camera=cam)
         if i:
             events.append((offset, "whoosh", None))

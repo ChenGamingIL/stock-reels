@@ -4,6 +4,8 @@ name: List Instagram posts
 # for redoing covers or checking what went up, plus a reach report (insights.json). Run by hand only.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly reach check, Monday morning
 
 permissions:
   contents: write

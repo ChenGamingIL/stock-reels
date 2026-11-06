@@ -204,11 +204,12 @@ def build_script(d, episode=1, kicker=None):
                                      if news[0].get("title_he") else
                                      f"מה מזיז את המניה? אלה הכותרות האחרונות, מ-{' ו-'.join(pubs[:2])}. "
                                      "שימו לב לתאריך של כל כותרת.")})
-    slides += [
-        {"kind": "earnings", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
-         "rows": earnings_rows(d), "narration": n["earnings"]},
-        {"kind": "table", "title": "יחסים פיננסיים", "rows": ratio_rows(d), "narration": n["ratios"]},
-    ]
+    if os.environ.get("LONG_HOT") == "1":  # the old ~90 s cut; viewers left after a few seconds (2026-11-06)
+        slides += [
+            {"kind": "earnings", "title": "דוחות אחרונים", "header": ("רבעון", "הכנסות", "EPS"),
+             "rows": earnings_rows(d), "narration": n["earnings"]},
+            {"kind": "table", "title": "יחסים פיננסיים", "rows": ratio_rows(d), "narration": n["ratios"]},
+        ]
     a, up = d.get("analysts") or {}, upside(d)
     if a.get("count") and up is not None:
         slides.append({"kind": "analysts", "title": "מה אומרת וול סטריט", "analysts": a,
@@ -222,12 +223,11 @@ def build_script(d, episode=1, kicker=None):
                                       + "נגד: " + ", ".join(cons) + ".")})
     when = cadence.next_label()
     slides.append({"kind": "outro", "title": f"{when} 08:00 · פרק {episode + 1}",
-                   "narration": f"זה היה פרק {episode} של המניה החמה. {when} בשמונה, פרק {episode + 1}. "
-                                "שלחו לחבר שמשקיע, ועקבו כדי לא לפספס. זה לא ייעוץ השקעות."})
+                   "narration": f"שלחו את זה למי שמחזיק {name}. {when} בשמונה, פרק {episode + 1}. לא ייעוץ השקעות."})
     slides = [sl for sl in slides if sl["kind"] not in ("table", "earnings") or sl["rows"]]
     move = d.get("change_5d_pct") or 0
     caption = (f"{name} ({d['ticker']}) {'עלתה' if move >= 0 else 'ירדה'} {abs(move):.1f}% השבוע. "
-               "מה מזיז את המניה, הדוחות, המכפילים" + (f", מה אומרים {a['count']} אנליסטים" if a.get("count") else "")
+               "מה מזיז את המניה" + (f", מה אומרים {a['count']} אנליסטים" if a.get("count") else "")
                + " ובעד ונגד במספרים.\n"
                + f"המניה החמה · פרק {episode} · ב-08:00 בבוקר\n"
                + f"הנתונים: Yahoo Finance, נכון ל-{d.get('asof', '')}. {DISCLAIMER}\n\n"
