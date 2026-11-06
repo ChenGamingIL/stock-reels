@@ -12,8 +12,12 @@ from .tts import LOUDNESS, synthesize
 
 W, H = 1080, 1920
 # burned-in captions sit in this band on Reels, so slide content ends above it
-CAP_Y, CAP_H = 1530, 120
+CAP_Y, CAP_H = 1530, 150
 CONTENT_BOTTOM = CAP_Y - 20
+# the captions themselves sit higher, inside Instagram's safe area: from about y=1540 down, the account
+# name, the post text and the buttons cover the picture, and the side buttons take the right edge
+CAP_TOP = int(os.environ.get("CAP_TOP", 1385))
+CAP_MAX_W = 820
 # Palette taken from the StocksisX logo: black, warm gold, green/red candles.
 BG_TOP, BG_BOTTOM = (6, 6, 6), (28, 22, 12)
 WHITE, MUTED = (246, 240, 226), (176, 158, 118)
@@ -889,18 +893,31 @@ def caption_chunks(words, max_words=3, max_chars=20):
     return chunks
 
 
-def caption_png(chunk, active, path):
-    """One caption frame: the line in a dark pill, the word being spoken in gold."""
+CAP_SIZE = 74
+POP = (0.78, 1.1)  # a new caption line pops in over two frames: small, a touch too big, then settles
+
+
+def caption_png(chunk, active, path, scale=1.0):
+    """One caption frame: big bold words with a dark outline, the word being spoken in gold and a size up."""
     img = Image.new("RGBA", (W, CAP_H), (0, 0, 0, 0))
-    dr = ImageDraw.Draw(img)
     if chunk:
-        size = 60
+        size = CAP_SIZE
         f = font(size)
         widths = [f.getlength(_visual(w[0])) for w in chunk]
         gap = f.getlength(" ")
         total = sum(widths) + gap * (len(chunk) - 1)
-        dr.rounded_rectangle([W / 2 - total / 2 - 36, 8, W / 2 + total / 2 + 36, CAP_H - 8], 30,
-                             fill=(0, 0, 0, 205), outline=GOLD_DARK + (255,), width=3)
+        if total > CAP_MAX_W:  # a long word: shrink the whole line rather than run under the side buttons
+            size = int(size * CAP_MAX_W / total)
+            f = font(size)
+            widths = [f.getlength(_visual(w[0])) for w in chunk]
+            gap = f.getlength(" ")
+            total = sum(widths) + gap * (len(chunk) - 1)
+        # drawn at 1x on a canvas of its own, then scaled for the pop
+        line = Image.new("RGBA", (W, CAP_H), (0, 0, 0, 0))
+        dr = ImageDraw.Draw(line)
+        cy = CAP_H / 2
+        dr.rounded_rectangle([W / 2 - total / 2 - 30, cy - size * 0.78, W / 2 + total / 2 + 30, cy + size * 0.78], 26,
+                             fill=(0, 0, 0, 150))
         # right to left, word by word; a run of English words keeps its own left-to-right order
         order, run = [], []
         for i, w in enumerate(chunk):
@@ -910,10 +927,25 @@ def caption_png(chunk, active, path):
             else:
                 run.append(i)
         order += run[::-1]
+        kw = {"direction": "rtl"} if HAS_RAQM else {}
         x = W / 2 + total / 2
         for i in order:
-            rtl_text(dr, (x, CAP_H / 2), chunk[i][0], size, ACCENT if i == active else WHITE, anchor="rm")
+            on = i == active
+            wf = font(int(size * 1.08)) if on else f
+            dx = (widths[i] - wf.getlength(_visual(chunk[i][0]))) / 2  # the bigger word stays centred on its slot
+            dr.text((x - dx, cy), _visual(chunk[i][0]), font=wf, fill=ACCENT if on else WHITE, anchor="rm",
+                    stroke_width=6, stroke_fill=(0, 0, 0), **kw)
             x -= widths[i] + gap
+        if abs(scale - 1) > 0.01:
+            sw, sh = int(W * scale), int(CAP_H * scale)
+            line = line.resize((sw, sh), Image.LANCZOS)
+            box = ((W - sw) // 2, (CAP_H - sh) // 2)
+            if scale > 1:
+                line = line.crop((-box[0], -box[1], -box[0] + W, -box[1] + CAP_H))
+                box = (0, 0)
+            img.paste(line, box, line)
+        else:
+            img = line
     img.save(path)
 
 
@@ -933,6 +965,13 @@ def caption_track(words, dur, out_dir, prefix):
                 else:
                     entries.append((blank, start - t))
                 t = start
+            if i == 0 and end - t > 0.3:  # the line pops in
+                for sc in POP:
+                    path = out_dir / f"{prefix}_cap_{n}.png"
+                    caption_png(chunk, i, path, sc)
+                    n += 1
+                    entries.append((path, 1 / motion.FPS))
+                    t += 1 / motion.FPS
             path = out_dir / f"{prefix}_cap_{n}.png"
             caption_png(chunk, i, path)
             n += 1
@@ -945,7 +984,7 @@ def caption_track(words, dur, out_dir, prefix):
     return lst
 
 
-def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out=True, shift=0.0):
+def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out=True, shift=0.0, camera=None):
     """Stream the slide's frames into ffmpeg with its narration, progress bar and captions."""
     inputs = ["-f", "rawvideo", "-pix_fmt", "rgb24", "-s", f"{W}x{H}", "-framerate", str(motion.FPS), "-i", "-"]
     inputs += ["-i", str(mp3)] if mp3 else ["-f", "lavfi", "-i", "anullsrc=r=44100:cl=stereo"]
@@ -956,7 +995,7 @@ def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out
         last = "p"
     if caps:
         inputs += ["-f", "concat", "-safe", "0", "-i", str(caps)]
-        graph += f"[{last}][3:v]overlay=0:{CAP_Y}:eof_action=pass[c];"
+        graph += f"[{last}][3:v]overlay=0:{CAP_TOP}:eof_action=pass[c];"
         last = "c"
     graph += f"[{last}]format=yuv420p[v];[1:a]apad,aresample=44100[a]"
     proc = subprocess.Popen([
@@ -965,7 +1004,7 @@ def _encode_slide(pieces, dur, mp3, caps, tape, t0, total, offset, seg, fade_out
         "-c:v", "libx264", "-preset", "veryfast", "-crf", "19", "-c:a", "aac", "-b:a", "160k", str(seg),
     ], stdin=subprocess.PIPE)
     try:
-        for raw in motion.frames(pieces, dur, tape, t0, fade_out, shift):
+        for raw in motion.frames(pieces, dur, tape, t0, fade_out, shift, camera):
             proc.stdin.write(raw)
     except BrokenPipeError:
         pass
@@ -986,6 +1025,10 @@ def backdrop_image(path):
         return None
 
 
+CAMERA = os.environ.get("CAMERA", "1") != "0"
+GAP = 0.3  # seconds of air after each slide's narration before the cut
+
+
 def render_video(d, script, out_dir):
     out_dir = Path(out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -1003,7 +1046,7 @@ def render_video(d, script, out_dir):
         full = RENDERERS[sl["kind"]](dd, sl)
         full.save(png)
         dur, words = synthesize(sl["narration"], str(mp3))
-        parts.append((motion.Pieces(full, chrome(dd), backdrop=drift), mp3, dur + 0.45, words))
+        parts.append((motion.Pieces(full, chrome(dd), backdrop=drift), mp3, dur + GAP, words))
     total = sum(p[2] for p in parts)
     tape = motion.Tape(*tape_strip(d))
     segments, events, offset = [], [(0.0, "hit", None)], 0.0
@@ -1011,8 +1054,9 @@ def render_video(d, script, out_dir):
         seg = out_dir / f"slide_{i}.mp4"
         caps = caption_track(words, dur, out_dir, f"s{i}") if captions and words else None
         shift = pieces.hook_shift() if i == 0 else 0.0
+        cam = motion.Camera(pieces, dur, shift, hook=i == 0) if CAMERA else None
         _encode_slide(pieces, dur, mp3, caps, tape, offset, total, offset, seg, fade_out=i < len(parts) - 1,
-                      shift=shift)
+                      shift=shift, camera=cam)
         if i:
             events.append((offset, "whoosh", None))
         events += [(offset + t, kind, arg) for t, kind, arg in pieces.events(shift)]
