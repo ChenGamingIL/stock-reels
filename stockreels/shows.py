@@ -71,7 +71,7 @@ def premarket_script(m, episode=1, kicker=None):
                        "narration": f"המניות שבולטות {when}: {top[0]} {_pct_words(top[1])}"
                                     + (f", ו-{mv['losers'][0][0]} {_pct_words(mv['losers'][0][1])}" if mv["losers"] and top not in mv["losers"] else "")
                                     + "."})
-    if m["earnings"]:
+    if m["earnings"] and not s:  # with a pattern the Reel is long enough; the earnings go in the caption
         slides.append({"kind": "bullets", "title": "דוחות השבוע", "bullets": [f"{t} · {d}" for t, d in m["earnings"]],
                        "narration": "החברות הגדולות שמפרסמות דוחות השבוע: " + ", ".join(t for t, _ in m["earnings"]) + "."})
     if s:
@@ -81,9 +81,6 @@ def premarket_script(m, episode=1, kicker=None):
         slides += [
             {"kind": "setup", "title": f"דפוס לימודי: {txt['name']}", "setup": s, "head": head,
              "narration": txt["narr"].format(**fmt) + " חשוב: זו דוגמה לימודית, לא ייעוץ פיננסי."},
-            {"kind": "bullets", "title": "למה זה דפוס", "bullets": [b.format(**fmt) for b in txt["why"]], "head": head,
-             "narration": "שלושה תנאים: מגמה עולה, " + ("חזרה לממוצע" if s["kind"] == "pullback" else "פריצה של השיא")
-                          + ", ו" + ("מומנטום שהתקרר." if s["kind"] == "pullback" else "ווליום גבוה.")},
             # the method in general terms only: no entry, stop or target prices (Investment Advice Law)
             {"kind": "bullets", "title": "איך סוחרים בונים תוכנית", "head": head,
              "bullets": ["מחכים שהמחיר יאשר את הדפוס", "מגדירים מראש איפה הרעיון מתבטל", "יעד של פי 2 לפחות מהסיכון"],
@@ -96,9 +93,10 @@ def premarket_script(m, episode=1, kicker=None):
     else:  # no textbook pattern today: say so rather than force one
         outro = ("היום אין דפוס שעומד בתנאים", "היום אף מניה לא עמדה בכל התנאים, ולכן אין דפוס. גם זה חלק מהשיטה.")
     slides.append({"kind": "outro", "title": outro[0],
-                   "narration": f"{outro[1]} זה היה פרק {episode} של לפני הפעמון. עקבו, ושלחו לחבר שסוחר. זה לא ייעוץ השקעות."})
+                   "narration": f"{outro[1]} שלחו לחבר שסוחר. לא ייעוץ השקעות."})
     caption = ("לפני הפעמון · פרק " + str(episode) + "\n"
-               + "סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות" + (", דוחות השבוע" if m["earnings"] else "")
+               + "סקירה לקראת הפתיחה בוול סטריט: חוזים, מניות זזות"
+               + (f", דוחות השבוע ({', '.join(t for t, _ in m['earnings'][:5])})" if m["earnings"] else "")
                + (f" ודפוס מסחר לימודי על {s['ticker']}" if s else "") + ".\n"
                + ("כל דפוס נבדק בפרק הבא בשקיפות מלאה, גם כשהוא נכשל.\n" if s else "")
                + ("הדפוס הוא דוגמה לימודית לשיטת מסחר, לא ייעוץ פיננסי. " if s else "") + DISCLAIMER + "\n\n" + "#שוקההון #מניות #וולסטריט #פרהמרקט #סווינג")
@@ -167,14 +165,14 @@ def close_script(m, episode=1, kicker=None):
         extra.append(f"מדד הפחד VIX {'עלה' if vix['pct'] >= 0 else 'ירד'} ל-{vix['price']:.1f}")
     if tnx:
         extra.append(f"והתשואה על אג\"ח ל-10 שנים עומדת על {tnx['price']:.2f} אחוז")
-    slides.append({"kind": "tiles", "title": "המדדים בסגירה", "tiles": m["tiles"],
-                   "narration": (", ".join(extra) + ".") if extra else "ככה נראו המדדים בסגירה."})
+    if extra:  # the indices are already in the opening; the fear index and the 10-year join the first line
+        slides[0]["narration"] += " " + ", ".join(extra) + "."
     if m.get("sectors"):
         top, bottom = m["sectors"][0], m["sectors"][-1]
         slides.append({"kind": "bars", "title": "הסקטורים היום", "bars": m["sectors"],
                        "narration": f"הסקטור החזק היום: {top[0]}, {_move(top[1])}. "
                                     f"החלש ביותר: {bottom[0]}, {_move(bottom[1])}."})
-    for w in m.get("why", []):
+    for w in m.get("why", [])[:1]:  # the biggest mover only: a short Reel keeps its viewers
         n0 = w["news"][0]
         said = n0.get("title_he") or ""
         verb = ("קפצה" if w["pct"] >= 3 else "עלתה") if w["pct"] >= 0 else ("צנחה" if w["pct"] <= -3 else "ירדה")
@@ -189,8 +187,7 @@ def close_script(m, episode=1, kicker=None):
                                                            if h0.get("title_he") else "")})
     when = cadence.next_label()
     slides.append({"kind": "outro", "title": f"{when} 08:00: המניה החמה",
-                   "narration": f"זה היה סיכום היום. {when} בשמונה בבוקר: המניה החמה. "
-                                "עקבו כדי לא לפספס, ושלחו למי שעוקב אחרי השוק."})
+                   "narration": f"שלחו למי שעוקב אחרי השוק. {when} בשמונה: המניה החמה."})
     for sl in slides:
         sl["narration"] = speak(sl["narration"])
     caption = (f"סיכום היום בוול סטריט · S&P 500 {spx['pct']:+.2f}%\n"
