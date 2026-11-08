@@ -1,4 +1,4 @@
-"""Evergreen 4:5 carousels (1080x1350) for the profile: the "start here" post and save-worthy guides.
+"""Evergreen 4:5 carousels (1080 x 1350) for the profile: the "start here" post and save-worthy guides.
 
 Carousels reach ~1.7x what Reels do for accounts under 5K followers, and they get saved, which tells
 Instagram the post is worth showing to more people. These are meant to be pinned on the profile.
