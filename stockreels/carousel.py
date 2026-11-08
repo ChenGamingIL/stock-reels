@@ -173,6 +173,18 @@ def main():
     key = sys.argv[1]
     paths, caption = build(key)
     print(f"[carousel] {key}: {len(paths)} slides in {paths[0].parent}")
+    if "--probe" in sys.argv:  # debugging: which kind of container accepts slide 0 (nothing gets published)
+        import os, requests
+        from . import instagram
+        rid = instagram._create_release(f"probe-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}")
+        url = instagram._upload_asset(rid, str(paths[0]), "probe.jpg", "image/jpeg")
+        base = f"https://{instagram.HOST}/{instagram.VERSION}/{os.environ['IG_USER_ID']}/media"
+        tok = os.environ["IG_ACCESS_TOKEN"]
+        for name, data in [("image", {"image_url": url}), ("item", {"image_url": url, "is_carousel_item": "true"}),
+                           ("story", {"image_url": url, "media_type": "STORIES"})]:
+            r = requests.post(base, data={**data, "access_token": tok}, timeout=60)
+            print(f"[probe] {name}: {r.status_code} {r.text[:300]}")
+        return
     if "--post" in sys.argv:
         from . import instagram
         mid = instagram.publish_carousel(paths, caption, f"carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M}")

@@ -18,6 +18,10 @@ on:
         description: "Publish to Instagram"
         type: boolean
         default: false
+      probe:
+        description: "Debug: test which media containers accept the slides (publishes nothing)"
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -43,7 +47,9 @@ jobs:
           GRAPH_HOST: ${{ vars.GRAPH_HOST }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          if [ "${{ inputs.post }}" = "true" ]; then
+          if [ "${{ inputs.probe }}" = "true" ]; then
+            python -m stockreels.carousel ${{ inputs.key }} --probe
+          elif [ "${{ inputs.post }}" = "true" ]; then
             python -m stockreels.carousel ${{ inputs.key }} --post
           else
             python - <<'PY'
