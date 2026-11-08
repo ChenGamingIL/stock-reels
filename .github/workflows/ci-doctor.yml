@@ -139,8 +139,39 @@ jobs:
           tail -n 400 /tmp/ci-doctor/failed.log > /tmp/ci-doctor/tail.log
           wc -l /tmp/ci-doctor/tail.log
 
-      - name: אבחון ותיקון עם Claude
+      # ===================== עצירה על כשל בפרסום =====================
+      # "Profile carousel" נמצא ברשימת ההיתר כי ברוב הריצות הוא רק מרנדר
+      # תצוגה מקדימה — אבל עם הקלט post: true הוא גם מפרסם לאינסטגרם, וכשל
+      # שם הוא כשל בלוגיקת פרסום, שאסור לתקן אוטומטית. ה-workflow_run event
+      # לא חושף את הקלטים של ההרצה, אז מזהים את זה מהלוג עצמו: אם ה-traceback
+      # נוגע באחת מפונקציות הפרסום או ב-Graph API, עוצרים ומשאירים לבן אדם.
+      #
+      # שימו לב ש-_create_release ו-_upload_asset *לא* ברשימה: הם יושבים
+      # ב-instagram.py אבל מדברים עם api.github.com, ולכן גם ריצת תצוגה
+      # מקדימה רגילה נוגעת בהם. חיפוש לפי שם הקובץ היה חוסם כל כשל רינדור.
+      - name: האם הכשל בפרסום?
+        id: scope
         if: steps.guard.outputs.go == 'true'
+        run: |
+          set -uo pipefail
+          if grep -Eq 'publish_reel|publish_story|publish_carousel|check_connection|refresh_token|graph\.instagram\.com|graph\.facebook\.com|rupload\.facebook\.com|OAuthException|Instagram API [0-9]{3}' /tmp/ci-doctor/tail.log; then
+            echo "::warning::הכשל נוגע בפרסום לאינסטגרם, לא בתשתית. ci-doctor לא מתקן לוגיקת פרסום — צריך מבט אנושי."
+            {
+              echo "## ci-doctor עצר בכוונה"
+              echo
+              echo "הכשל ב-**${{ github.event.workflow_run.name }}** נוגע בלוגיקת הפרסום לאינסטגרם"
+              echo "(Graph API או אחת מפונקציות ה-publish), ולא בתשתית הרינדור."
+              echo
+              echo "תיקון אוטומטי שם יכול לפרסם פוסט שגוי או לדרוך על טוקן, אז ci-doctor"
+              echo "לא נוגע. [הריצה שנכשלה](${{ github.event.workflow_run.html_url }}) מחכה לך."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "publishing=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "publishing=false" >> "$GITHUB_OUTPUT"
+          fi
+
+      - name: אבחון ותיקון עם Claude
+        if: steps.guard.outputs.go == 'true' && steps.scope.outputs.publishing == 'false'
         uses: anthropics/claude-code-action@v1
         with:
           anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
