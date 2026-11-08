@@ -8,6 +8,7 @@ Instagram the post is worth showing to more people. These are meant to be pinned
 """
 import datetime as dt
 import sys
+import time
 from pathlib import Path
 
 from PIL import Image, ImageDraw
@@ -173,21 +174,40 @@ def main():
     key = sys.argv[1]
     paths, caption = build(key)
     print(f"[carousel] {key}: {len(paths)} slides in {paths[0].parent}")
-    if "--probe" in sys.argv:  # debugging: which kind of container accepts slide 0 (nothing gets published)
+    if "--probe" in sys.argv:  # debugging: which hosted URL Instagram can fetch (nothing gets published)
         import os, requests
         from . import instagram
-        rid = instagram._create_release(f"probe-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}")
-        url = instagram._upload_asset(rid, str(paths[0]), "probe.jpg", "image/jpeg")
+        tag = f"probe-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}"
+        slide = str(paths[0])
+
+        # (1) how it used to be: a release asset, handed over as its github.com download link
+        rid = instagram._create_release(tag)
+        release_url = instagram._upload_asset(rid, slide, "probe.jpg", "image/jpeg")
+        # (2) the same asset, but with the flaky github.com redirector resolved by us
+        signed = None
+        for _ in range(8):
+            r = requests.get(release_url, allow_redirects=False, timeout=30)
+            if r.is_redirect:
+                signed = r.headers["Location"]
+                break
+            print(f"[probe] releases/download answered {r.status_code}, retrying")
+            time.sleep(5)
+        # (3) the fix: committed to the media branch, served by raw.githubusercontent.com
+        raw_url = instagram.host_image(slide, f"probe/{tag}/slide_0.jpg")
+
         base = f"https://{instagram.HOST}/{instagram.VERSION}/{os.environ['IG_USER_ID']}/media"
         tok = os.environ["IG_ACCESS_TOKEN"]
-        old = "https://github.com/ChenGamingIL/stock-reels/releases/download/shabbat-20261106-1356/story_0.jpg"
-        import time
-        time.sleep(20)
-        for name, data in [("old-story", {"image_url": old, "media_type": "STORIES"}), ("image", {"image_url": url}), ("item", {"image_url": url, "is_carousel_item": "true"}),
-                           ("story", {"image_url": url, "media_type": "STORIES"})]:
-            r = requests.post(base, data={**data, "access_token": tok}, timeout=60)
-            print(f"[probe] {name}: {r.status_code} {r.text[:300]}")
+        for name, url in [("release-download", release_url), ("release-signed", signed), ("raw", raw_url)]:
+            if not url:
+                print(f"[probe] {name}: could not be resolved")
+                continue
+            ours = requests.get(url, timeout=30)
+            print(f"[probe] {name}: we get {ours.status_code} {ours.headers.get('Content-Type')} -> {url[:110]}")
+            r = requests.post(base, data={"image_url": url, "is_carousel_item": "true",
+                                          "media_type": "IMAGE", "access_token": tok}, timeout=60)
+            print(f"[probe] {name}: Instagram {r.status_code} {r.text[:240]}")
         return
+
     if "--post" in sys.argv:
         from . import instagram
         mid = instagram.publish_carousel(paths, caption, f"carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M}")

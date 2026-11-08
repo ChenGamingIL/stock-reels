@@ -11,6 +11,7 @@ Optional:
   GRAPH_HOST       graph.instagram.com (Instagram Login, default) or graph.facebook.com (Facebook Login)
   GRAPH_VERSION    default v21.0
 """
+import base64
 import os
 import time
 
@@ -109,6 +110,58 @@ def host_on_github(video_path, tag):
     return _upload_asset(_create_release(tag), video_path, "reel.mp4", "video/mp4")
 
 
+MEDIA_BRANCH = os.environ.get("MEDIA_BRANCH", "media-assets")
+
+
+def _ensure_media_branch():
+    """Create the media branch off the default branch the first time we need it."""
+    repo = os.environ["GITHUB_REPOSITORY"]
+    api = f"https://api.github.com/repos/{repo}"
+    if requests.get(f"{api}/git/ref/heads/{MEDIA_BRANCH}", headers=_gh_headers(), timeout=30).ok:
+        return
+    default = _check(requests.get(api, headers=_gh_headers(), timeout=30))["default_branch"]
+    sha = _check(requests.get(f"{api}/git/ref/heads/{default}", headers=_gh_headers(),
+                              timeout=30))["object"]["sha"]
+    _check(requests.post(f"{api}/git/refs", headers=_gh_headers(),
+                         json={"ref": f"refs/heads/{MEDIA_BRANCH}", "sha": sha}, timeout=30))
+
+
+def host_image(path, repo_path):
+    """Commit a JPEG to the media branch and return a raw.githubusercontent.com URL for it.
+
+    Release assets are handed out as github.com/<repo>/releases/download/..., which is a
+    302 to a short-lived signed URL. That redirector answers 504 intermittently, and when
+    Instagram's fetcher hits one it reports it as code 9004 / subcode 2207052 ("the media
+    could not be fetched from this URI"). raw.githubusercontent.com serves the bytes
+    straight from a CDN with no redirect and a real Content-Type: image/jpeg, so pin the
+    URL to the commit we just made and hand Instagram that instead.
+    """
+    repo = os.environ["GITHUB_REPOSITORY"]
+    _ensure_media_branch()
+    with open(path, "rb") as f:
+        content = base64.b64encode(f.read()).decode()
+    commit = _check(requests.put(f"https://api.github.com/repos/{repo}/contents/{repo_path}",
+                                 headers=_gh_headers(),
+                                 json={"message": f"media: {repo_path}", "content": content,
+                                       "branch": MEDIA_BRANCH}, timeout=120))
+    return f"https://raw.githubusercontent.com/{repo}/{commit['commit']['sha']}/{repo_path}"
+
+
+def _await_image(url, tries=8, delay=5):
+    """Don't hand Instagram a URL we can't fetch ourselves as an image."""
+    for attempt in range(tries):
+        try:
+            r = requests.get(url, timeout=30)
+            if r.ok and r.headers.get("Content-Type", "").startswith("image/"):
+                return url
+            status = f"{r.status_code} {r.headers.get('Content-Type')}"
+        except requests.RequestException as e:
+            status = type(e).__name__
+        if attempt == tries - 1:
+            raise RuntimeError(f"{url} is not fetchable as an image ({status})")
+        time.sleep(delay)
+
+
 def publish_reel(video_path, caption, tag="reel", cover_path=None):
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"
@@ -147,38 +200,17 @@ def publish_story(video_url=None, image_url=None):
     return _wait_and_publish(base, user_id, token, cid)
 
 
-def _host_raw(path, name):
-    """Commit a file to the "media" branch and return its raw.githubusercontent.com URL. Release downloads
-    come back as application/octet-stream, which Instagram's image fetcher refused on 8.11 (error 2207052)."""
-    import base64
-    repo = os.environ["GITHUB_REPOSITORY"]
-    api = f"https://api.github.com/repos/{repo}"
-    if requests.get(f"{api}/branches/media", headers=_gh_headers(), timeout=30).status_code == 404:
-        main = _check(requests.get(f"{api}/git/ref/heads/main", headers=_gh_headers(), timeout=30))
-        _check(requests.post(f"{api}/git/refs", headers=_gh_headers(), timeout=30,
-                             json={"ref": "refs/heads/media", "sha": main["object"]["sha"]}))
-    with open(path, "rb") as f:
-        body = {"message": f"media: {name}", "branch": "media", "content": base64.b64encode(f.read()).decode()}
-    res = _check(requests.put(f"{api}/contents/media/{name}", headers=_gh_headers(), json=body, timeout=60))
-    return f"https://raw.githubusercontent.com/{repo}/{res['commit']['sha']}/media/{name}"
-
-
 def publish_carousel(jpg_paths, caption, tag):
-    """A feed carousel of 2-10 images (JPEG), hosted on a GitHub release like the Reels."""
+    """A feed carousel of 2-10 images (JPEG), each hosted on the media branch (see host_image)."""
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
     base = f"https://{HOST}/{VERSION}"
-    rid = _create_release(tag)
     children = []
     for i, p in enumerate(jpg_paths):
-        url = _upload_asset(rid, str(p), f"slide_{i}.jpg", "image/jpeg")
-        resp = requests.post(f"{base}/{user_id}/media", data={
-            "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
-        if not resp.ok and "2207052" in resp.text:  # Instagram couldn't fetch it: serve it as a real image
-            url = _host_raw(p, f"{tag}/slide_{i}.jpg")
-            print(f"[carousel] slide {i} from {url}")
-            resp = requests.post(f"{base}/{user_id}/media", data={
-                "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
-        children.append(_check(resp)["id"])
+        url = _await_image(host_image(str(p), f"carousel/{tag}/slide_{i}.jpg"))
+        print(f"[carousel] slide {i} hosted at {url}")
+        children.append(_check(requests.post(f"{base}/{user_id}/media", data={
+            "media_type": "IMAGE", "image_url": url, "is_carousel_item": "true",
+            "access_token": token}, timeout=60))["id"])
     cid = _check(requests.post(f"{base}/{user_id}/media", data={
         "media_type": "CAROUSEL", "children": ",".join(children), "caption": caption,
         "access_token": token}, timeout=60))["id"]
@@ -224,12 +256,11 @@ def publish_story_slides(png_paths, tag):
     png_paths = _within_quota(png_paths)
     if not png_paths:
         return []
-    release_id = _create_release(tag)
     ids = []
     for i, png in enumerate(png_paths):
         jpg = str(png).rsplit(".", 1)[0] + ".jpg"
         Image.open(png).convert("RGB").save(jpg, quality=92)
-        url = _upload_asset(release_id, jpg, f"story_{i}.jpg", "image/jpeg")
+        url = _await_image(host_image(jpg, f"story/{tag}/story_{i}.jpg"))
         ids.append(publish_story(image_url=url))
     return ids
 
