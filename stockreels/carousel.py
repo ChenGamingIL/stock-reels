@@ -180,7 +180,10 @@ def main():
         url = instagram._upload_asset(rid, str(paths[0]), "probe.jpg", "image/jpeg")
         base = f"https://{instagram.HOST}/{instagram.VERSION}/{os.environ['IG_USER_ID']}/media"
         tok = os.environ["IG_ACCESS_TOKEN"]
-        for name, data in [("image", {"image_url": url}), ("item", {"image_url": url, "is_carousel_item": "true"}),
+        old = "https://github.com/ChenGamingIL/stock-reels/releases/download/shabbat-20261106-1356/story_0.jpg"
+        import time
+        time.sleep(20)
+        for name, data in [("old-story", {"image_url": old, "media_type": "STORIES"}), ("image", {"image_url": url}), ("item", {"image_url": url, "is_carousel_item": "true"}),
                            ("story", {"image_url": url, "media_type": "STORIES"})]:
             r = requests.post(base, data={**data, "access_token": tok}, timeout=60)
             print(f"[probe] {name}: {r.status_code} {r.text[:300]}")
