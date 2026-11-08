@@ -64,7 +64,7 @@ CAROUSELS = {
              "sub": "החליקו"},
             {"kind": "terms", "items": [
                 ("1", "מניה", "חלק קטן בבעלות על חברה. החברה מרוויחה, גם אתם."),
-                ("2", "מדד", "סל של מניות שמראה איך חלק מהשוק מתנהג. למשל S&P 500."),
+                ("2", "מדד", "סל של מניות שמראה איך חלק מהשוק מתנהג, כמו S&P 500"),
             ]},
             {"kind": "terms", "items": [
                 ("3", "קרן סל (ETF)", "קרן שעוקבת אחרי מדד ונסחרת כמו מניה. דרך פשוטה לפזר."),
@@ -142,7 +142,7 @@ def slide(sl, n, total):
             dr.text((90, y - 20), num, font=font(190), fill=(80, 66, 40), anchor="la")
             rtl_text(dr, (W - 90, y), term, 84, ACCENT)
             yy = y + 125
-            for line in wrap(text, 56, W - 360):
+            for line in wrap(text, 56, W - 440):  # clear of the big number on the left
                 rtl_text(dr, (W - 90, yy), line, 56, WHITE)
                 yy += 74
             if j == 0:
