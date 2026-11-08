@@ -147,6 +147,22 @@ def publish_story(video_url=None, image_url=None):
     return _wait_and_publish(base, user_id, token, cid)
 
 
+def _host_raw(path, name):
+    """Commit a file to the "media" branch and return its raw.githubusercontent.com URL. Release downloads
+    come back as application/octet-stream, which Instagram's image fetcher refused on 8.11 (error 2207052)."""
+    import base64
+    repo = os.environ["GITHUB_REPOSITORY"]
+    api = f"https://api.github.com/repos/{repo}"
+    if requests.get(f"{api}/branches/media", headers=_gh_headers(), timeout=30).status_code == 404:
+        main = _check(requests.get(f"{api}/git/ref/heads/main", headers=_gh_headers(), timeout=30))
+        _check(requests.post(f"{api}/git/refs", headers=_gh_headers(), timeout=30,
+                             json={"ref": "refs/heads/media", "sha": main["object"]["sha"]}))
+    with open(path, "rb") as f:
+        body = {"message": f"media: {name}", "branch": "media", "content": base64.b64encode(f.read()).decode()}
+    res = _check(requests.put(f"{api}/contents/media/{name}", headers=_gh_headers(), json=body, timeout=60))
+    return f"https://raw.githubusercontent.com/{repo}/{res['commit']['sha']}/media/{name}"
+
+
 def publish_carousel(jpg_paths, caption, tag):
     """A feed carousel of 2-10 images (JPEG), hosted on a GitHub release like the Reels."""
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
@@ -155,12 +171,13 @@ def publish_carousel(jpg_paths, caption, tag):
     children = []
     for i, p in enumerate(jpg_paths):
         url = _upload_asset(rid, str(p), f"slide_{i}.jpg", "image/jpeg")
-        for attempt in range(3):  # a fresh release asset is sometimes not fetchable yet ("media download has failed")
+        resp = requests.post(f"{base}/{user_id}/media", data={
+            "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
+        if not resp.ok and "2207052" in resp.text:  # Instagram couldn't fetch it: serve it as a real image
+            url = _host_raw(p, f"{tag}/slide_{i}.jpg")
+            print(f"[carousel] slide {i} from {url}")
             resp = requests.post(f"{base}/{user_id}/media", data={
-                "media_type": "IMAGE", "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
-            if resp.ok or attempt == 2 or "2207052" not in resp.text:
-                break
-            time.sleep(10 * (attempt + 1))
+                "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
         children.append(_check(resp)["id"])
     cid = _check(requests.post(f"{base}/{user_id}/media", data={
         "media_type": "CAROUSEL", "children": ",".join(children), "caption": caption,
