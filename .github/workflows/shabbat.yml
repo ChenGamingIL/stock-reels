@@ -70,7 +70,13 @@ jobs:
           exit 1
       - name: Download Hebrew font (Heebo)
         if: steps.due.outputs.go == 'true' && inputs.dry_run != true
-        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+        run: |
+          # GitHub raw answered 504 on 8.11 and two posts failed here: retry, then a mirror
+          for url in "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf" \
+                     "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/heebo/Heebo%5Bwght%5D.ttf"; do
+            curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o assets/fonts/Heebo-Bold.ttf "$url" && exit 0
+          done
+          exit 1
       - name: Post the Story
         if: steps.due.outputs.go == 'true' && inputs.dry_run != true
         env:
