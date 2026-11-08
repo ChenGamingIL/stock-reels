@@ -1,0 +1,57 @@
+name: Profile carousel
+
+# Evergreen carousels for the profile (stockreels/carousel.py): the "start here" post and save-worthy guides.
+# Without "post" it only renders them and attaches the slides to a preview release. Run by hand;
+# a push that changes the carousels on this branch renders previews of all of them.
+on:
+  push:
+    branches: [claude/project-thread-srqo1r]
+    paths: [stockreels/carousel.py]
+  workflow_dispatch:
+    inputs:
+      key:
+        description: "Which carousel"
+        type: choice
+        options: [start_here, terms]
+        default: start_here
+      post:
+        description: "Publish to Instagram"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  carousel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q libraqm0 >/dev/null || true
+      - run: pip install -q requests pillow python-bidi
+      - name: Download Hebrew font (Heebo)
+        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+      - env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GRAPH_HOST: ${{ vars.GRAPH_HOST }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          if [ "${{ inputs.post }}" = "true" ]; then
+            python -m stockreels.carousel ${{ inputs.key }} --post
+          else
+            python - <<'PY'
+          import datetime as dt, os
+          from stockreels import carousel, instagram
+          keys = ["${{ inputs.key }}"] if "${{ inputs.key }}" else list(carousel.CAROUSELS)
+          for key in keys:
+              paths, _ = carousel.build(key)
+              rid = instagram._create_release(f"preview-carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}")
+              for f in paths:
+                  print(instagram._upload_asset(rid, str(f), f.name, "image/jpeg"))
+          PY
+          fi

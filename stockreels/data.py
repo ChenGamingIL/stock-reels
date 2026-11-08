@@ -149,11 +149,25 @@ def fetch_stock(ticker):
 
 
 def short_name(name):
-    """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration and titles."""
+    """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration, titles and covers.
+    Long names are cut to their first words so the cover never shows 'Microchip Technology Incorporat'."""
     import re
 
-    short = re.sub(r"[,\s]+(Inc\.?|Corporation|Corp\.?|Holdings?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|Co\.|Company|Class [A-C])$", "",
-                   name.strip(), flags=re.I).strip() or name
+    suffix = re.compile(r"[,\s]+(Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Holding SA|Ltd\.?|Limited|plc|"
+                        r"N\.V\.|S\.A\.|SA|AG|SE|Co\.|Company|Class [A-C]|Sponsored|ADR|American Depositary Shares?)$", re.I)
+    short = name.strip()
+    while True:  # 'Nokia Corporation Sponsored' -> 'Nokia'
+        cut = suffix.sub("", short).strip()
+        if cut == short or not cut:
+            break
+        short = cut
+    short = short or name
+    words = short.split()
+    while len(" ".join(words)) > 20 and len(words) > 1:
+        words = words[:-1]
+    while len(words) > 1 and (words[-1].lower() in ("de", "do", "da", "of", "and", "&", "the", "banco") or len(words[-1]) <= 2):
+        words = words[:-1]  # 'Companhia de' -> 'Companhia'
+    short = " ".join(words)
     # 'IREN LIMITED' -> 'IREN', 'ADVANCED MICRO DEVICES' -> 'Advanced Micro Devices'; short all-caps names stay
     return short.title() if short.isupper() and len(short) > 5 else short
 

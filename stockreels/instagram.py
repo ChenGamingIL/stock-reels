@@ -147,6 +147,22 @@ def publish_story(video_url=None, image_url=None):
     return _wait_and_publish(base, user_id, token, cid)
 
 
+def publish_carousel(jpg_paths, caption, tag):
+    """A feed carousel of 2-10 images (JPEG), hosted on a GitHub release like the Reels."""
+    user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
+    base = f"https://{HOST}/{VERSION}"
+    rid = _create_release(tag)
+    children = []
+    for i, p in enumerate(jpg_paths):
+        url = _upload_asset(rid, str(p), f"slide_{i}.jpg", "image/jpeg")
+        children.append(_check(requests.post(f"{base}/{user_id}/media", data={
+            "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60))["id"])
+    cid = _check(requests.post(f"{base}/{user_id}/media", data={
+        "media_type": "CAROUSEL", "children": ",".join(children), "caption": caption,
+        "access_token": token}, timeout=60))["id"]
+    return _wait_and_publish(base, user_id, token, cid)
+
+
 def publishing_quota():
     """(posts used in the last 24h, daily limit) from Instagram's content_publishing_limit."""
     user_id, token = os.environ["IG_USER_ID"], os.environ["IG_ACCESS_TOKEN"]
