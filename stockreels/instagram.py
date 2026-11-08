@@ -130,11 +130,17 @@ def host_image(path, repo_path):
     """Commit a JPEG to the media branch and return a raw.githubusercontent.com URL for it.
 
     Release assets are handed out as github.com/<repo>/releases/download/..., which is a
-    302 to a short-lived signed URL. That redirector answers 504 intermittently, and when
-    Instagram's fetcher hits one it reports it as code 9004 / subcode 2207052 ("the media
-    could not be fetched from this URI"). raw.githubusercontent.com serves the bytes
-    straight from a CDN with no redirect and a real Content-Type: image/jpeg, so pin the
-    URL to the commit we just made and hand Instagram that instead.
+    302 to a short-lived signed URL on release-assets.githubusercontent.com. Instagram's
+    media fetcher does not follow that redirect: it reports code 9004 / subcode 2207052,
+    "the media could not be fetched from this URI". The probe in run 15 pinned it down -
+    for one slide, the release-download URL got 400/2207052 while the signed URL it
+    redirects to got 200, same bytes and same application/octet-stream, so it is the
+    redirect and not the file, the Content-Type or the container type. (That redirector
+    is also answering 504 intermittently just now, which is real but separate.)
+
+    raw.githubusercontent.com serves the bytes straight from a CDN with no redirect and a
+    real Content-Type: image/jpeg, so pin the URL to the commit we just made and hand
+    Instagram that instead.
     """
     repo = os.environ["GITHUB_REPOSITORY"]
     _ensure_media_branch()
