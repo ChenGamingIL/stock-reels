@@ -1,9 +1,11 @@
 name: List Instagram posts
 
 # Read-only: lists the account's posts (captions, times, links) and attaches the list to a release,
-# for redoing covers or checking what went up. Run by hand only.
+# for redoing covers or checking what went up, plus a reach report (insights.json). Run by hand only.
 on:
   workflow_dispatch:
+  schedule:
+    - cron: "0 6 * * 1"  # weekly reach check, Monday morning
 
 permissions:
   contents: write
@@ -34,4 +36,7 @@ jobs:
           open("media.json", "w").write(json.dumps(media, ensure_ascii=False, indent=1))
           rid = instagram._create_release(f"media-list-{dt.datetime.now():%Y%m%d-%H%M}")
           print(instagram._upload_asset(rid, "media.json", "media.json", "application/json"))
+          from stockreels import insights
+          insights.main()
+          print(instagram._upload_asset(rid, "insights.json", "insights.json", "application/json"))
           PY
