@@ -34,7 +34,7 @@ jobs:
       - run: sudo apt-get install -y -q libraqm0 >/dev/null || true
       - run: pip install -q requests pillow python-bidi
       - name: Download Hebrew font (Heebo)
-        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+        run: curl -fsSL --retry 4 --retry-delay 5 --retry-all-errors -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
       - env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
