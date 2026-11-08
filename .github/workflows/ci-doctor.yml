@@ -1,0 +1,185 @@
+name: CI doctor
+run-name: "doctor: ${{ github.event.workflow_run.name }} #${{ github.event.workflow_run.run_number }}"
+
+# מאבחן ומתקן לבד workflow שנכשל, במקום לשלוח מייל "Run failed" ולחכות לטיפול ידני.
+# מוריד את הלוגים של הריצה שנפלה, מריץ עליהם את claude-code-action, ודוחף קומיט
+# תיקון לענף שנכשל. כל קומיט כזה מתחיל ב-"ci-doctor:" כדי שיהיה אפשר לזהות אותו.
+#
+# ===================== רשימת ה-workflows המותרים =====================
+# רק workflows של תשתית — רינדור תמונות, נכסים, דוגמאות. שם כשל הוא רועש וגלוי,
+# ותיקון שגוי עולה ריצה נוספת ולא יותר.
+#
+# בכוונה *לא* נכללים ה-workflows שמפרסמים לאינסטגרם בפועל:
+#   Posting clock, Daily stock reel, Instagram post stats,
+#   Refresh Instagram token, Shabbat Shalom story, List Instagram posts
+# שם תיקון אוטומטי שקט יכול לפרסם פוסט שגוי, לדרוך על טוקן או לשבש את לוח
+# הפרסום — וזה יקר יותר מכשל רועש. גם "List Instagram posts" בחוץ, כי הוא
+# נוגע ב-Instagram Graph API.
+#
+# כלל אצבע להוספה: אם לא ברור לאיזו קטגוריה workflow חדש שייך — משאירים אותו
+# בחוץ. אין כאן wildcard בכוונה; כל הוספה היא החלטה מפורשת.
+# =====================================================================
+on:
+  workflow_run:
+    workflows:
+      - "Profile carousel"
+      - "Redo old covers"
+      - "AI image samples"
+      - "Voice samples"
+    types: [completed]
+
+# הרשאות מינימליות: לדחוף קומיט (contents) ולקרוא לוגים של ריצות (actions).
+permissions:
+  contents: write
+  actions: read
+
+jobs:
+  doctor:
+    # רק כשלים, ורק מענפים של הריפו הזה (לא מ-fork, ששם לא נדחוף כלום).
+    if: >-
+      github.event.workflow_run.conclusion == 'failure' &&
+      github.event.workflow_run.head_repository.full_name == github.repository
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - name: Checkout הענף שנכשל
+        uses: actions/checkout@v4
+        with:
+          ref: ${{ github.event.workflow_run.head_branch }}
+          # צריך היסטוריה בשביל ספירת נסיונות התיקון שלמטה, לא רק קומיט אחד.
+          fetch-depth: 20
+
+      # ===================== הגנה מפני לופ =====================
+      # שלוש שכבות:
+      #
+      # 1. ci-doctor לא מופיע ברשימת ה-workflows בטריגר למעלה, ולכן כשל של
+      #    ci-doctor עצמו לא מפעיל ci-doctor נוסף. אין רקורסיה ישירה.
+      #
+      # 2. עצירה אחרי 2 נסיונות על אותו ענף: סופרים כמה קומיטים *רצופים*
+      #    בראש הענף מתחילים ב-"ci-doctor:". נסיון ראשון → קומיט אחד כזה,
+      #    נסיון שני → שניים, ומכאן ci-doctor עוצר ומשאיר את הכשל גלוי.
+      #    הספירה רצופה בכוונה: ברגע שבן אדם דוחף קומיט משלו לענף, המונה
+      #    מתאפס והמנגנון זמין שוב לכשל הבא.
+      #
+      # 3. דילוג על כשל מיושן: אם ראש הענף כבר אינו הקומיט שנכשל, מישהו
+      #    דחף מאז — יכול להיות שהבעיה כבר תוקנה. במקרה כזה אין מה לתקן,
+      #    וגם אין טעם לדחוף על קוד שלא נבדק.
+      - name: הגנה מפני לופ
+        id: guard
+        env:
+          FAILED_SHA: ${{ github.event.workflow_run.head_sha }}
+          BRANCH: ${{ github.event.workflow_run.head_branch }}
+        run: |
+          set -euo pipefail
+
+          tip="$(git rev-parse HEAD)"
+          if [ "$tip" != "$FAILED_SHA" ]; then
+            echo "::notice::ראש הענף $BRANCH הוא $tip, והכשל היה על $FAILED_SHA — הענף התקדם מאז, מדלג."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          attempts=0
+          for sha in $(git rev-list -n 5 HEAD); do
+            case "$(git log -1 --format=%s "$sha")" in
+              "ci-doctor:"*) attempts=$((attempts + 1)) ;;
+              *) break ;;
+            esac
+          done
+          echo "נסיונות ci-doctor רצופים בראש $BRANCH: $attempts"
+
+          if [ "$attempts" -ge 2 ]; then
+            echo "::warning::ci-doctor כבר ניסה לתקן את $BRANCH פעמיים ברצף ($attempts קומיטים) והכשל חוזר. עוצר כאן — צריך מבט אנושי."
+            echo "go=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+
+          echo "attempt=$((attempts + 1))" >> "$GITHUB_OUTPUT"
+          echo "go=true" >> "$GITHUB_OUTPUT"
+
+      - name: בדיקת הסיקרט ANTHROPIC_API_KEY
+        if: steps.guard.outputs.go == 'true'
+        env:
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -z "${ANTHROPIC_API_KEY:-}" ]; then
+            {
+              echo "## ci-doctor לא יכול לרוץ"
+              echo
+              echo "חסר הסיקרט \`ANTHROPIC_API_KEY\` בריפו, ובלעדיו אין איך לאבחן את הכשל."
+              echo
+              echo "**איך מוסיפים:** בדף הריפו ב-GitHub →"
+              echo "**Settings** → **Secrets and variables** → **Actions** →"
+              echo "הכפתור **New repository secret** →"
+              echo "בשדה *Name* לכתוב \`ANTHROPIC_API_KEY\`,"
+              echo "בשדה *Secret* להדביק מפתח API מ-console.anthropic.com → **Add secret**."
+              echo
+              echo "זה אותו מפתח ש-\`Daily stock reel\` משתמש בו לכתיבת התסריט,"
+              echo "אז אם הרילס היומי עובד — הסיקרט קיים ושמו כנראה שונה."
+            } >> "$GITHUB_STEP_SUMMARY"
+            echo "::error::חסר הסיקרט ANTHROPIC_API_KEY — Settings > Secrets and variables > Actions > New repository secret, בשם ANTHROPIC_API_KEY. ראו את ה-Summary של הריצה להסבר מלא."
+            exit 1
+          fi
+          echo "הסיקרט קיים."
+
+      - name: הורדת הלוגים של הריצה שנכשלה
+        if: steps.guard.outputs.go == 'true'
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          RUN_ID: ${{ github.event.workflow_run.id }}
+        run: |
+          set -uo pipefail
+          mkdir -p /tmp/ci-doctor
+          # --log-failed מחזיר רק את הצעדים שנפלו. אם הוא נכשל (לוגים שפג תוקפם
+          # למשל) ממשיכים בלי לוג — Claude עוד יכול לקרוא את ה-workflow עצמו.
+          gh run view "$RUN_ID" --repo "${{ github.repository }}" --log-failed \
+            > /tmp/ci-doctor/failed.log 2>/tmp/ci-doctor/gh-error.txt \
+            || cat /tmp/ci-doctor/gh-error.txt
+          # חותכים ל-400 השורות האחרונות: שם נמצאת השגיאה, והפרומפט נשאר בגודל סביר.
+          tail -n 400 /tmp/ci-doctor/failed.log > /tmp/ci-doctor/tail.log
+          wc -l /tmp/ci-doctor/tail.log
+
+      - name: אבחון ותיקון עם Claude
+        if: steps.guard.outputs.go == 'true'
+        uses: anthropics/claude-code-action@v1
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          claude_args: --allowedTools "Bash,Read,Write,Edit,Glob,Grep" --max-turns 40
+          prompt: |
+            ה-workflow "${{ github.event.workflow_run.name }}" נכשל בריפו הזה.
+            אתה עובד בתוך checkout של הענף שנכשל, `${{ github.event.workflow_run.head_branch }}`,
+            על הקומיט `${{ github.event.workflow_run.head_sha }}`.
+
+            קישור לריצה: ${{ github.event.workflow_run.html_url }}
+            הלוגים של הצעדים שנפלו נמצאים בקובץ `/tmp/ci-doctor/tail.log` — תקרא אותו קודם כל.
+            זהו נסיון התיקון מספר ${{ steps.guard.outputs.attempt }} מתוך 2 המותרים על הענף הזה.
+
+            המשימה:
+            1. תקרא את הלוג, תמצא את השגיאה האמיתית (לא תופעת לוואי שלה).
+            2. תקרא את קובץ ה-workflow תחת `.github/workflows/` ואת סקריפטי הפייתון שהוא מריץ.
+            3. תתקן את שורש הבעיה בתיקון הקטן ביותר שפותר אותה.
+            4. תדחוף קומיט אחד לענף `${{ github.event.workflow_run.head_branch }}`.
+
+            כללים מחייבים:
+            - הודעת הקומיט **חייבת** להתחיל בדיוק ב-`ci-doctor: ` (כולל הרווח).
+              זה הסימון שמונע לופ של תיקונים — בלעדיו ci-doctor לא יֵדע שהוא כבר
+              ניסה, וינסה שוב ושוב. אחרי הפרפיקס, שורה אחת בעברית שמסבירה מה תוקן.
+            - קומיט אחד בלבד, ורק לענף שנכשל. בלי לפתוח PR, בלי למזג, בלי לגעת
+              בענפים אחרים ובלי force-push.
+            - אל תיגע ב-`.github/workflows/ci-doctor.yml` עצמו.
+            - אל תיגע בלוגיקת הפרסום לאינסטגרם (`stockreels/instagram.py`, `run.py`,
+              `posted.json`, `history.json`, טוקנים או לוח הפרסום) אלא אם הכשל *הוא*
+              שם ומדובר בשגיאת תחביר ברורה.
+            - אל תשתיק את הכשל: בלי `|| true` על צעד שאמור לעבוד, בלי `continue-on-error`,
+              בלי למחוק צעדים כדי לקבל ירוק, ובלי להוריד בדיקות.
+            - אל תוסיף הורדת נכס חיצוני בזמן ריצה (`curl` של פונט או תמונה). הפונט
+              העברי שמור בריפו תחת `assets/fonts/Heebo-Bold.ttf` — אם משהו צריך פונט,
+              שיקרא אותו משם.
+            - אל תוסיף, תשנה או תמחק סיקרטים, הרשאות `permissions`, או הגדרות
+              התראות של החשבון.
+
+            אם אחרי קריאת הלוג אתה לא מבין מה שבור, או שהתיקון דורש החלטה שאינה
+            טכנית (לשנות התנהגות, לפרסם משהו אחר, להוסיף סיקרט) — **אל תדחוף כלום**.
+            במקום זה תכתוב ל-`$GITHUB_STEP_SUMMARY` סיכום בעברית: מה נכשל, מה אתה
+            משער שהסיבה, ומה בן אדם צריך להחליט.
