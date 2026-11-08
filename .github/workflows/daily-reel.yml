@@ -93,6 +93,7 @@ jobs:
         if: steps.gate.outputs.run == 'true'
         with:
           python-version: "3.12"
+          cache: pip
       - name: Install system packages
         if: steps.gate.outputs.run == 'true'
         # retry once: an apt mirror occasionally hangs
@@ -101,11 +102,9 @@ jobs:
             timeout 240 sh -c 'sudo apt-get update && sudo apt-get install -y ffmpeg libraqm0' && exit 0
           done
           exit 1
-      - name: Download Hebrew font (Heebo)
+      - name: Install Python packages
         if: steps.gate.outputs.run == 'true'
-        run: curl -fsSL -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf"
-      - run: pip install -r requirements.txt
-        if: steps.gate.outputs.run == 'true'
+        run: pip install -r requirements.txt
       - name: Build and publish
         if: steps.gate.outputs.run == 'true'
         env:
