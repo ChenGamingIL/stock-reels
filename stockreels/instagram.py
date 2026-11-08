@@ -155,8 +155,13 @@ def publish_carousel(jpg_paths, caption, tag):
     children = []
     for i, p in enumerate(jpg_paths):
         url = _upload_asset(rid, str(p), f"slide_{i}.jpg", "image/jpeg")
-        children.append(_check(requests.post(f"{base}/{user_id}/media", data={
-            "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60))["id"])
+        for attempt in range(3):  # a fresh release asset is sometimes not fetchable yet ("media download has failed")
+            resp = requests.post(f"{base}/{user_id}/media", data={
+                "media_type": "IMAGE", "image_url": url, "is_carousel_item": "true", "access_token": token}, timeout=60)
+            if resp.ok or attempt == 2 or "2207052" not in resp.text:
+                break
+            time.sleep(10 * (attempt + 1))
+        children.append(_check(resp)["id"])
     cid = _check(requests.post(f"{base}/{user_id}/media", data={
         "media_type": "CAROUSEL", "children": ",".join(children), "caption": caption,
         "access_token": token}, timeout=60))["id"]
