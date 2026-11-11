@@ -54,5 +54,13 @@
     "trigger": 524.49,
     "stop": 504.96,
     "target": 563.55
+  },
+  {
+    "date": "2026-11-11",
+    "ticker": "MSFT",
+    "kind": "pullback",
+    "trigger": 545.28,
+    "stop": 519.34,
+    "target": 597.16
   }
 ]
