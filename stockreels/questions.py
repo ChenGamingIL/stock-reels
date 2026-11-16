@@ -463,7 +463,7 @@ def script(n):
                "narration": f"שאלה של היום: {q}"}]
     for heading, text in points:
         slides.append({"kind": "lesson", "title": heading, "text": text, "narration": f"{heading}. {text}"})
-    when = cadence.next_label()
+    when = cadence.next_label("question")
     slides.append({"kind": "outro", "title": f"{when}: שאלה חדשה",
                    "narration": f"{when} שאלה חדשה. יש לכם שאלה על שוק ההון? כתבו לנו בתגובות, ועקבו כדי לא לפספס."})
     for sl in slides:
