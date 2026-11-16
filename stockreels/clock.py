@@ -34,14 +34,14 @@ _hebcal = []
 
 
 def slots(now):
-    """(due, show, grace hours, key) for yesterday, today and tomorrow when they are posting days
-    (stockreels/cadence.py), plus the next Shabbat/Yom Tov Story, which goes up whatever the day."""
+    """(due, show, grace hours, key) for yesterday, today and tomorrow on the days that show goes out
+    (stockreels/cadence.py LINEUP), plus the next Shabbat/Yom Tov Story, which goes up whatever the day."""
     out = []
     for tz, (h, m), show, grace, days in SLOTS:
         local = now.astimezone(tz)
         for d in (-1, 0, 1):
             day = local.date() + dt.timedelta(days=d)
-            if (days is None or day.weekday() in days) and cadence.is_post_day(day):
+            if (days is None or day.weekday() in days) and cadence.posts(show, day):
                 out.append((dt.datetime.combine(day, dt.time(h, m), tz), show, grace, day.isoformat()))
     try:
         from stockreels import shabbat

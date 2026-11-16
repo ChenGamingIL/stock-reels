@@ -221,7 +221,7 @@ def build_script(d, episode=1, kicker=None):
     slides.append({"kind": "proscons", "title": "בשורה התחתונה", "pros": pros, "cons": cons,
                    "narration": speak(("בשורה התחתונה. בעד: " + ", ".join(pros) + ". " if pros else "בשורה התחתונה. ")
                                       + "נגד: " + ", ".join(cons) + ".")})
-    when = cadence.next_label()
+    when = cadence.next_label("hot")
     slides.append({"kind": "outro", "title": f"{when} 08:00 · פרק {episode + 1}",
                    "narration": f"זה היה פרק {episode} של המניה החמה. {when} בשמונה, פרק {episode + 1}. "
                                 "שלחו לחבר שמשקיע, ועקבו כדי לא לפספס. זה לא ייעוץ השקעות."})

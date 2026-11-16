@@ -2,7 +2,7 @@
 
 Shows (Israel time): 08:00 hot stock, 12:30 הידעת?, 15:30 pre-market review with a swing setup,
 18:00 question of the day, 20:00 basics lesson, and the evening recap after the US close,
-on posting days only (once every 3 days, stockreels/cadence.py).
+on the days each show goes out (two Reels a day, stockreels/cadence.py LINEUP).
 
   python run.py --show premarket # pick the show: hot (default), premarket, lesson, question...
 

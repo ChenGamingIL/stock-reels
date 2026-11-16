@@ -92,7 +92,7 @@ def premarket_script(m, episode=1, kicker=None):
                           "זו דוגמה לימודית לשיטה. זה לא ייעוץ פיננסי ולא המלצה לקנות או למכור."},
         ]
     if s:
-        outro = (f"{cadence.next_label()}: מה קרה לדפוס של היום", f"{cadence.next_label()} נבדוק מה קרה לדפוס של היום, גם אם הוא נכשל.")
+        outro = (f"{cadence.next_label('premarket')}: מה קרה לדפוס של היום", f"{cadence.next_label('premarket')} נבדוק מה קרה לדפוס של היום, גם אם הוא נכשל.")
     else:  # no textbook pattern today: say so rather than force one
         outro = ("היום אין דפוס שעומד בתנאים", "היום אף מניה לא עמדה בכל התנאים, ולכן אין דפוס. גם זה חלק מהשיטה.")
     slides.append({"kind": "outro", "title": outro[0],
@@ -116,7 +116,7 @@ def lesson_script(day=None, episode=None):
         heading, text = p[0], p[1]
         slides.append({"kind": "lesson", "title": heading, "text": text, "visual": p[2] if len(p) > 2 else None,
                        "narration": f"{heading}. {text}"})
-    when = cadence.next_label()
+    when = cadence.next_label("lesson")
     slides.append({"kind": "outro", "title": f"{when}: {nxt}",
                    "narration": f"{when} בערב: {nxt}. עקבו כדי לא לפספס."})
     caption = (f"שיעור {n}: {title}\n"
@@ -139,7 +139,7 @@ def session_script(m):
     if m["movers"]["gainers"] or m["movers"]["losers"]:
         slides.append({"kind": "movers", "title": "מי זזה בפתיחה" if is_open else "הבולטות של היום",
                        "movers": m["movers"], "narration": ""})
-    slides.append({"kind": "outro", "title": "נתראה בסיכום הערב" if is_open else f"{cadence.next_label()} 08:00: המניה החמה הבאה",
+    slides.append({"kind": "outro", "title": "נתראה בסיכום הערב" if is_open else f"{cadence.next_label('hot')} 08:00: המניה החמה הבאה",
                    "narration": ""})
     return {"slides": slides, "caption": ""}
 
@@ -187,7 +187,7 @@ def close_script(m, episode=1, kicker=None):
         slides.append({"kind": "news", "title": "הכותרות של היום", "news": m["headlines"],
                        "narration": "ומה עוד בכותרות." + (f" {h0['publisher']}: {h0['title_he']}"
                                                            if h0.get("title_he") else "")})
-    when = cadence.next_label()
+    when = cadence.next_label("hot")
     slides.append({"kind": "outro", "title": f"{when} 08:00: המניה החמה",
                    "narration": f"זה היה סיכום היום. {when} בשמונה בבוקר: המניה החמה. "
                                 "עקבו כדי לא לפספס, ושלחו למי שעוקב אחרי השוק."})
