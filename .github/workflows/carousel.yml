@@ -10,10 +10,13 @@ on:
   workflow_dispatch:
     inputs:
       key:
-        description: "Which carousel"
-        type: choice
-        options: [start_here, terms]
+        description: "Which carousel: start_here, terms, or a name for a new one given in spec"
+        type: string
         default: start_here
+      spec:
+        description: "A new carousel as JSON (written by the team's content bot); empty = the built-in one named in key"
+        type: string
+        default: ""
       post:
         description: "Publish to Instagram"
         type: boolean
@@ -41,25 +44,25 @@ jobs:
         run: |
           curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf" \
           || curl -fsSL --retry 3 --retry-delay 5 -o assets/fonts/Heebo-Bold.ttf "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/heebo/Heebo%5Bwght%5D.ttf"
-      - env:
+      - name: Render, preview or publish
+        env:
           IG_USER_ID: ${{ secrets.IG_USER_ID }}
           IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
           GRAPH_HOST: ${{ vars.GRAPH_HOST }}
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEY: ${{ inputs.key }}
+          POST: ${{ inputs.post }}
+          PROBE: ${{ inputs.probe }}
+          CAROUSEL_SPEC: ${{ inputs.spec }}
         run: |
-          if [ "${{ inputs.probe }}" = "true" ]; then
-            python -m stockreels.carousel ${{ inputs.key }} --probe
-          elif [ "${{ inputs.post }}" = "true" ]; then
-            python -m stockreels.carousel ${{ inputs.key }} --post
-          else
-            python - <<'PY'
-          import datetime as dt, os
-          from stockreels import carousel, instagram
-          keys = ["${{ inputs.key }}"] if "${{ inputs.key }}" else list(carousel.CAROUSELS)
-          for key in keys:
-              paths, _ = carousel.build(key)
-              rid = instagram._create_release(f"preview-carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}")
-              for f in paths:
-                  print(instagram._upload_asset(rid, str(f), f.name, "image/jpeg"))
-          PY
+          if [ "$PROBE" = "true" ]; then
+            python -m stockreels.carousel "${KEY:-start_here}" --probe
+          elif [ "$POST" = "true" ]; then
+            python -m stockreels.carousel "${KEY:-start_here}" --post
+          elif [ -n "$KEY$CAROUSEL_SPEC" ]; then
+            python -m stockreels.carousel "${KEY:-custom}" --preview
+          else  # a push that changed the carousels: previews of all the built-in ones
+            for k in $(python -c "from stockreels import carousel; print(' '.join(carousel.CAROUSELS))"); do
+              python -m stockreels.carousel "$k" --preview
+            done
           fi

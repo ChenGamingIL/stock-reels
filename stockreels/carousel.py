@@ -4,9 +4,17 @@ Carousels reach ~1.7x what Reels do for accounts under 5K followers, and they ge
 Instagram the post is worth showing to more people. These are meant to be pinned on the profile.
 
   python -m stockreels.carousel start_here        # render to output/carousel_start_here/
+  python -m stockreels.carousel terms --preview   # render and attach the slides to a preview release
   python -m stockreels.carousel terms --post      # render and publish
+  CAROUSEL_SPEC='{"key": ..., "caption": ..., "slides": [...]}' python -m stockreels.carousel --preview
+
+CAROUSEL_SPEC is how the content bot of the team makes a new carousel without a commit: the same shape as
+an entry of CAROUSELS, as JSON. Slide kinds: cover, list, terms, cta and text (a title and a paragraph).
 """
 import datetime as dt
+import json
+import os
+import re
 import sys
 import time
 from pathlib import Path
@@ -128,7 +136,9 @@ def slide(sl, n, total):
         for line in wrap(sl["title"], 104, W - 180):
             rtl_text(dr, (W - 90, y), line, 104, WHITE)
             y += 128
-        rtl_text(dr, (W - 90, y + 50), sl["sub"], 50, ACCENT)
+        if sl.get("sub"):
+            rtl_text(dr, (W - 90, y + 50), sl["sub"], 50, ACCENT)
+        _fits(y + 110, "the title")
     elif k == "list":
         y = _title(dr, sl["title"], 240)
         gap = min(230, (H - 170 - y) // len(sl["items"]))
@@ -146,6 +156,8 @@ def slide(sl, n, total):
             for line in wrap(text, 56, W - 440):  # clear of the big number on the left
                 rtl_text(dr, (W - 90, yy), line, 56, WHITE)
                 yy += 74
+            if yy > y + 460:
+                raise ValueError(f"term {num}: the explanation is too long for half a slide (3-4 short lines)")
             if j == 0:
                 dr.line([(90, y + 470), (W - 90, y + 470)], fill=(60, 50, 32), width=2)
     elif k == "cta":
@@ -154,11 +166,73 @@ def slide(sl, n, total):
             dr.ellipse([W - 112, y + 50, W - 88, y + 74], fill=ACCENT)
             rtl_text(dr, (W - 135, y + 30), line, 58, WHITE)
             y += 120
+        _fits(y, "the lines")
+    elif k == "text":  # a short explainer: a title, then one or more short paragraphs
+        y = _title(dr, sl["title"], 240)
+        for para in sl["body"] if isinstance(sl["body"], list) else [sl["body"]]:
+            for line in wrap(para, 60, W - 180):
+                rtl_text(dr, (W - 90, y), line, 60, WHITE)
+                y += 82
+            y += 40
+        _fits(y, "the text")
+    if k == "list":
+        _fits(y, "the list")
     return img
 
 
-def build(key, out_dir=None):
-    spec = CAROUSELS[key]
+def _fits(y, what):
+    if y > H - 105:  # the page dots sit at H - 75
+        raise ValueError(f"{what} runs off the slide: shorten it or split it into two slides")
+
+
+EMOJI = re.compile("[\U0001F000-\U0001FAFF☀-➿️‍]")
+KINDS = {"cover": ("kicker", "title"), "list": ("title", "items"), "terms": ("items",),
+         "cta": ("title", "lines"), "text": ("title", "body")}
+
+
+def _plain(v):
+    """The slides are set in Heebo, which has no emoji: drop them there (the caption keeps its own)."""
+    if isinstance(v, str):
+        return EMOJI.sub("", v).strip()
+    if isinstance(v, (list, tuple)):
+        return [_plain(x) for x in v]
+    return v
+
+
+def load_spec(raw, key=None):
+    """A carousel the team's content bot wrote: the shape of a CAROUSELS entry, plus an optional "key"."""
+    spec = json.loads(raw) if isinstance(raw, str) else raw
+    slides = spec.get("slides") or []
+    if not 3 <= len(slides) <= 10:
+        raise ValueError(f"a carousel needs 3 to 10 slides, this one has {len(slides)}")
+    for i, sl in enumerate(slides):
+        need = KINDS.get(sl.get("kind"))
+        if need is None:
+            raise ValueError(f"slide {i}: kind must be one of {sorted(KINDS)}")
+        missing = [f for f in need if not sl.get(f)]
+        if missing:
+            raise ValueError(f"slide {i} ({sl['kind']}): {', '.join(missing)} missing")
+    if not str(spec.get("caption") or "").strip():
+        raise ValueError("the caption is missing")
+    key = re.sub(r"[^a-z0-9_]+", "_", str(spec.get("key") or key or "custom").lower()).strip("_") or "custom"
+    return key, {"caption": spec["caption"].strip(),
+                 "slides": [{f: _plain(v) for f, v in sl.items()} for sl in slides]}
+
+
+def sheet(paths, out, cols=4, w=270, pad=12):
+    """All the slides on one image, in swipe order, for a quick look before approving."""
+    h = w * H // W
+    rows = (len(paths) + cols - 1) // cols
+    img = Image.new("RGB", (cols * w + (cols + 1) * pad, rows * h + (rows + 1) * pad), (12, 11, 8))
+    for i, p in enumerate(paths):
+        img.paste(Image.open(p).resize((w, h), Image.LANCZOS),
+                  (pad + (i % cols) * (w + pad), pad + (i // cols) * (h + pad)))
+    img.save(out, quality=85)
+    return Path(out)
+
+
+def build(key, out_dir=None, spec=None):
+    spec = spec or CAROUSELS[key]
     out = Path(out_dir or ROOT / "output" / f"carousel_{key}")
     out.mkdir(parents=True, exist_ok=True)
     paths = []
@@ -170,12 +244,40 @@ def build(key, out_dir=None):
     return paths, spec["caption"]
 
 
+def preview(key, paths, spec):
+    """Attach the slides, a contact sheet, the caption and the spec to a preview release; return the links."""
+    from . import instagram
+    out = paths[0].parent
+    sh = sheet(paths, out / "sheet.jpg")
+    (out / "spec.json").write_text(json.dumps({"key": key, **spec}, ensure_ascii=False, indent=1))
+    rid = instagram._create_release(f"preview-carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}")
+    links = {"sheet": instagram._upload_asset(rid, str(sh), "sheet.jpg", "image/jpeg")}
+    for name, kind in [("caption.txt", "text/plain"), ("spec.json", "application/json")]:
+        links[name] = instagram._upload_asset(rid, str(out / name), name, kind)
+    links["slides"] = [instagram._upload_asset(rid, str(p), p.name, "image/jpeg") for p in paths]
+    print("[carousel] preview:", json.dumps(links, ensure_ascii=False))
+    if os.environ.get("GITHUB_STEP_SUMMARY"):
+        with open(os.environ["GITHUB_STEP_SUMMARY"], "a") as f:
+            f.write(f"### Carousel `{key}`: {len(paths)} slides\n\n![sheet]({links['sheet']})\n\n"
+                    f"[caption]({links['caption.txt']}) · [spec]({links['spec.json']})\n")
+    return links
+
+
 def main():
-    key = sys.argv[1]
-    paths, caption = build(key)
+    args = [a for a in sys.argv[1:] if not a.startswith("--")]
+    raw = os.environ.get("CAROUSEL_SPEC", "").strip()
+    if raw:  # a new carousel from the team's content bot
+        key, spec = load_spec(raw, args[0] if args else None)
+    else:
+        key = args[0]
+        spec = CAROUSELS[key]
+    paths, caption = build(key, spec=spec)
     print(f"[carousel] {key}: {len(paths)} slides in {paths[0].parent}")
+    if "--preview" in sys.argv:
+        preview(key, paths, spec)
+        return
     if "--probe" in sys.argv:  # debugging: which hosted URL Instagram can fetch (nothing gets published)
-        import os, requests
+        import requests
         from . import instagram
         tag = f"probe-{key}-{dt.datetime.now():%Y%m%d-%H%M%S}"
         slide = str(paths[0])
@@ -209,7 +311,9 @@ def main():
         return
 
     if "--post" in sys.argv:
-        from . import instagram
+        from . import instagram, shabbat
+        if shabbat.is_quiet():  # Chen's rule: nothing goes up from candle lighting until Shabbat ends
+            sys.exit("[carousel] Shabbat or Yom Tov now: nothing is published. Run it again after it ends.")
         mid = instagram.publish_carousel(paths, caption, f"carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M}")
         print(f"[carousel] published {mid}")
 
