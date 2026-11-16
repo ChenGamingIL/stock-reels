@@ -1,0 +1,68 @@
+name: Profile carousel
+
+# Evergreen carousels for the profile (stockreels/carousel.py): the "start here" post and save-worthy guides.
+# Without "post" it only renders them and attaches the slides to a preview release. Run by hand;
+# a push that changes the carousels on this branch renders previews of all of them.
+on:
+  push:
+    branches: [claude/project-thread-srqo1r]
+    paths: [stockreels/carousel.py]
+  workflow_dispatch:
+    inputs:
+      key:
+        description: "Which carousel: start_here, terms, or a name for a new one given in spec"
+        type: string
+        default: start_here
+      spec:
+        description: "A new carousel as JSON (written by the team's content bot); empty = the built-in one named in key"
+        type: string
+        default: ""
+      post:
+        description: "Publish to Instagram"
+        type: boolean
+        default: false
+      probe:
+        description: "Debug: test which media containers accept the slides (publishes nothing)"
+        type: boolean
+        default: false
+
+permissions:
+  contents: write
+
+jobs:
+  carousel:
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - run: sudo apt-get install -y -q libraqm0 >/dev/null || true
+      - run: pip install -q -r requirements.txt
+      - name: Download Hebrew font (Heebo)
+        run: |
+          curl -fsSL --retry 3 --retry-delay 5 --retry-all-errors -o assets/fonts/Heebo-Bold.ttf "https://github.com/google/fonts/raw/main/ofl/heebo/Heebo%5Bwght%5D.ttf" \
+          || curl -fsSL --retry 3 --retry-delay 5 -o assets/fonts/Heebo-Bold.ttf "https://cdn.jsdelivr.net/gh/google/fonts@main/ofl/heebo/Heebo%5Bwght%5D.ttf"
+      - name: Render, preview or publish
+        env:
+          IG_USER_ID: ${{ secrets.IG_USER_ID }}
+          IG_ACCESS_TOKEN: ${{ secrets.IG_ACCESS_TOKEN }}
+          GRAPH_HOST: ${{ vars.GRAPH_HOST }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          KEY: ${{ inputs.key }}
+          POST: ${{ inputs.post }}
+          PROBE: ${{ inputs.probe }}
+          CAROUSEL_SPEC: ${{ inputs.spec }}
+        run: |
+          if [ "$PROBE" = "true" ]; then
+            python -m stockreels.carousel "${KEY:-start_here}" --probe
+          elif [ "$POST" = "true" ]; then
+            python -m stockreels.carousel "${KEY:-start_here}" --post
+          elif [ -n "$KEY$CAROUSEL_SPEC" ]; then
+            python -m stockreels.carousel "${KEY:-custom}" --preview
+          else  # a push that changed the carousels: previews of all the built-in ones
+            for k in $(python -c "from stockreels import carousel; print(' '.join(carousel.CAROUSELS))"); do
+              python -m stockreels.carousel "$k" --preview
+            done
+          fi

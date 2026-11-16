@@ -23,6 +23,9 @@ from stockreels import data, render, script, series
 ROOT = Path(__file__).resolve().parent
 
 
+# 2026-11-06 reach check: viewers left after 1.3-14 s, so every Reel opens on a clean full-screen hook
+OPENER = os.environ.get("OPENER", "1") != "0"
+
 CTA = "💾 שמרו את הפוסט · 📤 שלחו לחבר שמשקיע · 🔔 עקבו לעדכון יומי"
 
 
@@ -310,14 +313,17 @@ def main():
                 sc["bg"] = str(bg)
         except Exception as e:
             print(f"[aiart] skipped: {e.__class__.__name__}: {e}")
-        video = render.render_video(stock, sc, out_dir)
         first = sc["slides"][0]
         sub = {"hot": f"המניה החמה · פרק {ep}", "premarket": f"לפני הפעמון · פרק {ep}",
                "lesson": f"שיעור {sc.get('number')} · שוק ההון בדקה", "didyouknow": f"הידעת? · פרק {ep}",
                "close": f"סיכום היום · פרק {ep}", "question": f"#{ep} · שאלה של היום"}[args.show]
         spec = cover_spec(args.show, stock, sc, m if args.show in ("premarket", "close") else None)
-        render.cover({**stock, "bg": render.backdrop_image(sc.get("bg"))}, first["title"], sub, **spec).save(
-            out_dir / "cover.png")
+        look = {**stock, "bg": render.backdrop_image(sc.get("bg"))}
+        render.cover(look, first["title"], sub, **spec).save(out_dir / "cover.png")
+        if OPENER:  # the Reel opens on the same hook, clean, so the first second stops the scroll
+            render.cover(look, first["title"], **spec, clean=True).save(out_dir / "opener.png")
+            sc["opener"] = str(out_dir / "opener.png")
+        video = render.render_video(stock, sc, out_dir)
         sc["caption"] = polish_caption(sc["caption"])
     (out_dir / "caption.txt").write_text(sc["caption"])
     (out_dir / "script.json").write_text(json.dumps(sc, ensure_ascii=False, indent=2))

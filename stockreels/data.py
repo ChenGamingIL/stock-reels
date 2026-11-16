@@ -1,6 +1,7 @@
 """Pick a "hot" stock for today and collect the numbers the video talks about."""
 import json
 import random
+import re
 from pathlib import Path
 
 # Large, liquid US names. The day's pick is the biggest mover among these
@@ -148,11 +149,25 @@ def fetch_stock(ticker):
 
 
 def short_name(name):
-    """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration and titles."""
+    """'Super Micro Computer, Inc.' -> 'Super Micro Computer', for narration, titles and covers.
+    Long names are cut to their first words so the cover never shows 'Microchip Technology Incorporat'."""
     import re
 
-    short = re.sub(r"[,\s]+(Inc\.?|Corporation|Corp\.?|Holdings?|Ltd\.?|Limited|plc|N\.V\.|S\.A\.|Co\.|Company|Class [A-C])$", "",
-                   name.strip(), flags=re.I).strip() or name
+    suffix = re.compile(r"[,\s]+(Inc\.?|Incorporated|Corporation|Corp\.?|Holdings?|Holding SA|Ltd\.?|Limited|plc|"
+                        r"N\.V\.|S\.A\.|SA|AG|SE|Co\.|Company|Class [A-C]|Sponsored|ADR|American Depositary Shares?)$", re.I)
+    short = name.strip()
+    while True:  # 'Nokia Corporation Sponsored' -> 'Nokia'
+        cut = suffix.sub("", short).strip()
+        if cut == short or not cut:
+            break
+        short = cut
+    short = short or name
+    words = short.split()
+    while len(" ".join(words)) > 20 and len(words) > 1:
+        words = words[:-1]
+    while len(words) > 1 and (words[-1].lower() in ("de", "do", "da", "of", "and", "&", "the", "banco") or len(words[-1]) <= 2):
+        words = words[:-1]  # 'Companhia de' -> 'Companhia'
+    short = " ".join(words)
     # 'IREN LIMITED' -> 'IREN', 'ADVANCED MICRO DEVICES' -> 'Advanced Micro Devices'; short all-caps names stay
     return short.title() if short.isupper() and len(short) > 5 else short
 
@@ -225,6 +240,10 @@ def with_hebrew(news):
     return news
 
 
+# quote and price pages that the news search returns as if they were headlines ("symbol_ Stock Quote Price and Forecast")
+QUOTE_PAGE = re.compile(r"stock quote|quote price|price and forecast|^symbol_|stock price today", re.I)
+
+
 def google_news(ticker, n=3, max_age_days=10, query=None):
     """Fallback headlines from Google News RSS, which names the publisher of every item."""
     import datetime as dt
@@ -252,7 +271,7 @@ def google_news(ticker, n=3, max_age_days=10, query=None):
             when = email.utils.parsedate_to_datetime(it.findtext("pubDate"))
         except Exception:
             continue
-        if not pub or not title:
+        if not pub or not title or QUOTE_PAGE.search(title):
             continue
         out.append({"title": title, "publisher": pub, "date": when.strftime("%d.%m"), "ts": when.timestamp()})
     print(f"[news] google returned {len(items)} items")
