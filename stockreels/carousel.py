@@ -314,8 +314,44 @@ def main():
         from . import instagram, shabbat
         if shabbat.is_quiet():  # Chen's rule: nothing goes up from candle lighting until Shabbat ends
             sys.exit("[carousel] Shabbat or Yom Tov now: nothing is published. Run it again after it ends.")
+        before = posted(key)
+        if before:  # two runs for one carousel (the team bot woken twice) must not post it twice
+            print(f"[carousel] {key} is already on Instagram ({before}): not posting it again.")
+            return
         mid = instagram.publish_carousel(paths, caption, f"carousel-{key}-{dt.datetime.now():%Y%m%d-%H%M}")
         print(f"[carousel] published {mid}")
+        mark_posted(key, mid)
+
+
+POSTED = "posted-carousel-{}"  # a release that marks a carousel as published
+
+
+def posted(key):
+    """The marker release's link if `key` was published before, else None. Fails loudly when GitHub can't
+    say, since guessing "not posted" could post it twice."""
+    import requests
+    from . import instagram
+    repo = os.environ.get("GITHUB_REPOSITORY")
+    if not repo:
+        return None  # a local run: there is no marker to read
+    r = requests.get(f"https://api.github.com/repos/{repo}/releases/tags/{POSTED.format(key)}",
+                     headers=instagram._gh_headers(), timeout=30)
+    if r.status_code == 404:
+        return None
+    r.raise_for_status()
+    return r.json().get("html_url") or POSTED.format(key)
+
+
+def mark_posted(key, media_id):
+    import requests
+    from . import instagram
+    tag = POSTED.format(key)
+    r = requests.post(f"https://api.github.com/repos/{os.environ['GITHUB_REPOSITORY']}/releases",
+                      headers=instagram._gh_headers(), timeout=30,
+                      json={"tag_name": tag, "name": tag,
+                            "body": f"Carousel {key} went up on Instagram as media {media_id}. Delete this release "
+                                    "only to publish the same carousel again on purpose."})
+    print(f"[carousel] marked {tag}: {r.status_code}")
 
 
 if __name__ == "__main__":

@@ -29,6 +29,12 @@ on:
 permissions:
   contents: write
 
+# One run per carousel at a time: a second run for the same key waits, then sees the first run's
+# posted-carousel-<key> release and publishes nothing (carousel.py), so a carousel never goes up twice.
+concurrency:
+  group: carousel-${{ inputs.key || github.ref }}
+  cancel-in-progress: false
+
 jobs:
   carousel:
     runs-on: ubuntu-latest

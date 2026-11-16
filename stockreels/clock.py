@@ -167,8 +167,16 @@ def run(budget=dt.timedelta(hours=5, minutes=30)):
         upcoming = [(due, show) for due, show, _, key in plan if due > now and state.get(show) != key]
         due, show = upcoming[0] if upcoming else (now + dt.timedelta(days=1), "nothing")
         if due > start + budget and not watch:
-            print(f"[clock] next is {show} at {due.astimezone(IL):%a %H:%M} Israel, past this run's budget")
-            return
+            # Wait out this run's budget before handing over. Returning at once made the next run return at
+            # once too: one clock run a minute, ~1,400 a day, whenever the next show was 5.5+ hours away.
+            left = (start + budget - now).total_seconds()
+            if left <= 0:
+                print(f"[clock] next is {show} at {due.astimezone(IL):%a %H:%M} Israel, past this run's budget")
+                return
+            print(f"[clock] next is {show} at {due.astimezone(IL):%a %d.%m %H:%M} Israel, past this run's budget: "
+                  f"waiting here {left / 3600:.1f}h, then the next clock takes over", flush=True)
+            time.sleep(min(300, left) + 5)
+            continue
         if now > start + budget + dt.timedelta(minutes=10):
             print("[clock] out of time; the next clock picks up from here")
             return
