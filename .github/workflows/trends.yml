@@ -2,9 +2,13 @@ name: X trends (Grok)
 
 # רז, the team's X scout (stockreels/trends.py): what traders on X talk about this week. The content bot
 # dispatches it before choosing a topic. It needs the XAI_API_KEY secret; without it the run says so and
-# spends nothing.
+# spends nothing. A push that changes the scout only runs its self-test, which calls nothing and costs nothing.
 on:
   workflow_dispatch:
+  push:
+    paths:
+      - stockreels/trends.py
+      - .github/workflows/trends.yml
 
 permissions:
   contents: write
@@ -19,7 +23,11 @@ jobs:
         with:
           python-version: "3.12"
       - run: pip install -q requests
+      - name: Self-test, no xAI call
+        if: github.event_name == 'push'
+        run: python -m stockreels.trends --selftest
       - name: Ask Grok what X talks about
+        if: github.event_name != 'push'
         env:
           XAI_API_KEY: ${{ secrets.XAI_API_KEY }}
           XAI_MODEL: ${{ vars.XAI_MODEL }}

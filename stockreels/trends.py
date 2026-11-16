@@ -2,6 +2,7 @@
 
   python -m stockreels.trends            -> trends.json and trends.md, and the summary in the job log
   python -m stockreels.trends --release  -> the same, attached to a trends-<date> release
+  python -m stockreels.trends --selftest -> parses a canned answer, calls nothing (the workflow's push check)
 
 The content bot runs it (trends.yml) before choosing a topic. It needs the XAI_API_KEY secret, from Chen's
 own xAI account, which is paid by use: $5 per 1,000 posts the search reads, plus tokens (docs.x.ai pricing,
@@ -86,7 +87,32 @@ def summary(data):
     return "\n".join(lines)
 
 
+SAMPLE = {"output": [
+    {"type": "x_search_call", "status": "completed"},
+    {"type": "message", "content": [{"type": "output_text", "text": "Here you go:\n" + json.dumps({
+        "window": "2026-11-12..2026-11-16",
+        "topics": [{"topic": "Nvidia earnings week", "tickers": ["NVDA"], "why": "Results are due and options price a big move.",
+                    "mood": "mixed", "evidence": ["https://x.com/i/status/1"],
+                    "angle_he": "מה זה דוח רבעוני ולמה המניה זזה גם כשהתוצאות טובות"},
+                   {"tickers": ["XYZ"]}],
+        "hebrew_x": "בטוויטר הישראלי מדברים על מס רווחי הון",
+        "avoid": ["a rumored buyout nobody sourced"]}, ensure_ascii=False)}]}]}
+
+
+def selftest():
+    data = parse(text_of(SAMPLE))
+    assert [t["topic"] for t in data["topics"]] == ["Nvidia earnings week"], data["topics"]
+    md = summary(data)
+    for want in ("$NVDA", "[mixed]", "זווית:", "X בעברית:", "להתרחק:"):
+        assert want in md, (want, md)
+    assert text_of({"output_text": "{}"}) == "{}"
+    print(md)
+    print("[trends] self-test passed. No xAI call was made.")
+
+
 def main():
+    if "--selftest" in sys.argv:
+        return selftest()
     key = os.environ.get("XAI_API_KEY", "").strip()
     if not key:
         print("[trends] no XAI_API_KEY secret yet: רז waits for Chen's xAI key. Nothing was spent.")
