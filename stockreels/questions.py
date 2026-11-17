@@ -10,7 +10,7 @@ until all 100 have gone out; then a new shuffle starts.
 """
 import random
 
-from . import cadence
+from . import cadence, experiments
 from .script import DISCLAIMER, speak
 
 SLOT = "18:00"
@@ -464,13 +464,19 @@ def script(n):
     for heading, text in points:
         slides.append({"kind": "lesson", "title": heading, "text": text, "narration": f"{heading}. {text}"})
     when = cadence.next_label("question")
-    slides.append({"kind": "outro", "title": f"{when}: שאלה חדשה",
-                   "narration": f"{when} שאלה חדשה. יש לכם שאלה על שוק ההון? כתבו לנו בתגובות, ועקבו כדי לא לפספס."})
+    ask = experiments.share_ask()  # HQ experiment x-2026-47-share-ask (18.11 and 19.11 only)
+    if ask:
+        slides.append({"kind": "outro", "title": experiments.SHARE_ASK.replace(" 📤", ""),  # no emoji glyph in the video font
+                       "narration": f"שלחו את זה לחבר שתמיד שואל אתכם על מניות. {when} שאלה חדשה."})
+    else:
+        slides.append({"kind": "outro", "title": f"{when}: שאלה חדשה",
+                       "narration": f"{when} שאלה חדשה. יש לכם שאלה על שוק ההון? כתבו לנו בתגובות, ועקבו כדי לא לפספס."})
     for sl in slides:
         sl["narration"] = speak(sl["narration"])
-    caption = (f"שאלה של היום: {q}\n"
+    caption = ((experiments.SHARE_ASK + "\n" if ask else "")
+               + f"שאלה של היום: {q}\n"
                + " · ".join(p[0] for p in points) + "\n"
-               + f"שאלה של היום · #{n} · ב-{SLOT}\n"
+               + f"שאלה של היום · #{n} · ב-{experiments.slot_label('question', (18, 0))}\n"
                + "יש לכם שאלה על שוק ההון? כתבו בתגובות 👇\n"
                + f"{DISCLAIMER}\n\n#שאלהשלהיום #שוקההון #מניות #השקעות #למתחילים")
     return {"slides": slides, "caption": caption, "number": n, "big": big}

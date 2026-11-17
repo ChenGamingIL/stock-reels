@@ -9,6 +9,11 @@ import os
 
 from . import cadence
 
+
+def _hot_at():
+    from . import experiments
+    return experiments.slot_label("hot", (8, 0))
+
 DISCLAIMER = "אין לראות בתוכן זה ייעוץ השקעות או המלצה לקנות או למכור ניירות ערך."
 MODEL = os.environ.get("CLAUDE_MODEL", "claude-sonnet-5-5")
 
@@ -229,7 +234,8 @@ def build_script(d, episode=1, kicker=None):
     caption = (f"{name} ({d['ticker']}) {'עלתה' if move >= 0 else 'ירדה'} {abs(move):.1f}% השבוע. "
                "מה מזיז את המניה" + (f", מה אומרים {a['count']} אנליסטים" if a.get("count") else "")
                + " ובעד ונגד במספרים.\n"
-               + f"המניה החמה · פרק {episode} · ב-08:00 בבוקר\n"
+               + (f"המניה החמה · פרק {episode} · ב-08:00 בבוקר\n" if _hot_at() == "08:00"
+                  else f"המניה החמה · פרק {episode} · הפעם ב-{_hot_at()} בערב\n")
                + f"הנתונים: Yahoo Finance, נכון ל-{d.get('asof', '')}. {DISCLAIMER}\n\n"
                + f"#{d['ticker']} #מניות #שוקההון #וולסטריט #השקעות")
     return {"slides": slides, "caption": caption}
