@@ -70,5 +70,13 @@
     "trigger": 648.43,
     "stop": 624.62,
     "target": 696.05
+  },
+  {
+    "date": "2026-11-23",
+    "ticker": "AAPL",
+    "kind": "pullback",
+    "trigger": 355.05,
+    "stop": 340.56,
+    "target": 384.03
   }
 ]
