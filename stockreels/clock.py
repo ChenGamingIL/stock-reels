@@ -14,7 +14,7 @@ import time
 from pathlib import Path
 from zoneinfo import ZoneInfo
 
-from stockreels import cadence
+from stockreels import cadence, experiments
 
 IL = ZoneInfo("Asia/Jerusalem")
 NY = ZoneInfo("America/New_York")
@@ -42,7 +42,8 @@ def slots(now):
         for d in (-1, 0, 1):
             day = local.date() + dt.timedelta(days=d)
             if (days is None or day.weekday() in days) and cadence.posts(show, day):
-                out.append((dt.datetime.combine(day, dt.time(h, m), tz), show, grace, day.isoformat()))
+                hh, mm = experiments.slot(show, day, (h, m)) if tz is IL else (h, m)  # a one-day swap, if any
+                out.append((dt.datetime.combine(day, dt.time(hh, mm), tz), show, grace, day.isoformat()))
     try:
         from stockreels import shabbat
         if not _hebcal or now - _hebcal[0] > dt.timedelta(hours=1):  # the loop wakes every 5 minutes
